@@ -75,6 +75,10 @@ if zed.grab(runtime_params) == sl.ERROR_CODE.SUCCESS:
     xyz = xyz[valid]
     rgba = rgba[valid]
 
+    print("Range of depth values (m) in x -axis :", np.min(xyz[:, 0]), "to", np.max(xyz[:, 0]))
+    print("Range of depth values (m) in y -axis :", np.min(xyz[:, 1]), "to", np.max(xyz[:, 1]))
+    print("Range of depth values (m) in z -axis :", np.min(xyz[:, 2]), "to", np.max(xyz[:, 2]))        
+    
     # Convert RGBA float to RGB uint8
     rgba_uint8 = rgba.view(np.uint32)
     r = ((rgba_uint8 >> 0) & 0xFF).astype(np.float32) / 255.0
