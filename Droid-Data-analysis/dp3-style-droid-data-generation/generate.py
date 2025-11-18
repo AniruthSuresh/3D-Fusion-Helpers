@@ -8,5 +8,3 @@ This script is used to extract :
 5. "action": Array of shape (T, Nd). We use relative end-effector position control for the robot arm and relative joint-angle position control for the dex hand.
     
 """
-
-

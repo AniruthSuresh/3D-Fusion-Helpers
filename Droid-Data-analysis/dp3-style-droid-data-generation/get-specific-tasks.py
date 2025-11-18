@@ -1,17 +1,17 @@
-"""
-Script to filter tasks based on user-defined keywords in language instructions.
-"""
 import json
 
 # User-defined keywords (both must appear)
 KEYWORDS = ["put", "marker"]
 
+# Load the main JSON
 with open("/home/aniruth/Desktop/3D-Fusion-Helpers/Droid-Data-analysis/filtered-iou-sorted-cleaned.json", "r") as f:
     clean_data = json.load(f)
 
+# Load the annotation JSON
 with open("/home/aniruth/Desktop/3D-Fusion-Helpers/Droid-Data-analysis/droid_language_annotations.json", "r") as f:
     anno_data = json.load(f)
 
+# Filtered dictionary
 final_data = {}
 
 for key, val in clean_data.items():
@@ -28,6 +28,7 @@ for key, val in clean_data.items():
         if found:
             final_data[key] = val
 
+# Save to final JSON
 with open("final.json", "w") as f:
     json.dump(final_data, f, indent=4)
 
