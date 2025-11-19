@@ -1,5 +1,5 @@
 """
-Script to extract the middle(cause right cam we want) SVO recording and trajectory files for top-K quality metric data samples.
+Script to extract the middle (right cam) SVO recording and trajectory files for top-K quality metric data samples.
 """
 
 import json
@@ -8,7 +8,7 @@ import subprocess
 
 JSON_PATH = "/home/aniruth/Desktop/3D-Fusion-Helpers/Droid-Data-analysis/dp3-style-droid-data-generation/final.json"
 OUT_DIR = "dp3_style_data"
-TOP_N = 4   # Change to get top-K
+TOP_N = 17   # Change to get top-K
 # ==============================
 
 with open(JSON_PATH, "r") as f:
@@ -46,11 +46,16 @@ for idx, (metric, rel_path) in enumerate(top_items, 1):
         print("No SVO files found!")
         continue
 
-    # Sort and select middle SVO
+    # Sort and print all SVO files
     svo_files.sort()
+    print("Found SVO files:")
+    for f in svo_files:
+        print("  -", f)
+
+    # Select middle SVO
     middle_idx = len(svo_files) // 2
     middle_svo = svo_files[middle_idx]
-    print(f"Selected middle SVO: {middle_svo}")
+    print(f"Selecting middle SVO (right cam): {middle_svo}")
 
     # ---- Download only the middle SVO ----
     subprocess.run(["gsutil", "-m", "cp", middle_svo, target_dir], check=True)

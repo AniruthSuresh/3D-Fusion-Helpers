@@ -5,8 +5,8 @@ import cv2
 import os
 
 # Paths
-svo_path = "/home/aniruth/Desktop/RRC/point-cloud-droid-data/droid/svo/28451778.svo"
-save_dir = "/home/aniruth/Desktop/RRC/point-cloud-droid-data/droid/results"
+svo_path = "/home/aniruth/Desktop/3D-Fusion-Helpers/Droid-Data-analysis/dp3-style-droid-data-generation/dp3_style_data/4/20103212.svo"
+save_dir = "results-check"
 os.makedirs(save_dir, exist_ok=True)
 
 # Initialize ZED
