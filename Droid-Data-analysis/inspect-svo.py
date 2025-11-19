@@ -24,7 +24,7 @@ if err != sl.ERROR_CODE.SUCCESS:
     print("Failed to open SVO:", err)
     exit(1)
 
-
+   
 print(f"\nOpened {svo_path}")
 info = zed.get_camera_information()
 print("Model:", info.camera_model)
