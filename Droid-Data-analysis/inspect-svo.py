@@ -5,7 +5,7 @@ import cv2
 import os
 
 # Paths
-svo_path = "/home/aniruth/Desktop/3D-Fusion-Helpers/Droid-Data-analysis/dp3-style-droid-data-generation/dp3_style_data/4/20103212.svo"
+svo_path = "/home/aniruth/Desktop/RRC/3D-Fusion-Helpers/Droid-Data-analysis/svo/19553404.svo"
 save_dir = "results-check"
 os.makedirs(save_dir, exist_ok=True)
 

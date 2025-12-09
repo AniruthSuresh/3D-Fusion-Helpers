@@ -6,4 +6,5 @@
 *.jpeg
 *.h5
 *.txt
-
+*db3
+*yaml
