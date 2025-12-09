@@ -3,7 +3,7 @@ from rclpy.serialization import deserialize_message
 from rosidl_runtime_py.utilities import get_message
 import numpy as np
 
-bag_path = "./data/sync_data_bag_21/sync_data_bag_21_0.db3"
+bag_path = "/home/aniruth/Desktop/RRC/3D-Fusion-Helpers/Lab-data-zarr-converting/data/sync_data_bag_21/sync_data_bag_21_0.db3"
 
 # ---------- OPEN BAG ----------
 reader = rosbag2_py.SequentialReader()
