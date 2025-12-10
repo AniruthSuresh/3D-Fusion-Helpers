@@ -86,39 +86,32 @@ def read_joint_gripper(db3_path):
 
     return states, actions
 
-# ------------------------------
-# SIMULATE AND RECORD EEF POSE
-# ------------------------------
-def simulate_and_record(states_file):
-    joint_traj = np.loadtxt(states_file)
-    print(f"Loaded {joint_traj.shape[0]} synchronized joint frames")
-
-    print("Starting PyBullet simulation...")
-    p.connect(p.DIRECT)  # use GUI if you want to visualize
+def simulate_eef(states, urdf_path, eef_index):
+    """Simulate PyBullet robot to get EEF pose for each state."""
+    p.connect(p.GUI)  # use GUI if visualization needed
     p.setAdditionalSearchPath(pybullet_data.getDataPath())
+    robot = p.loadURDF(urdf_path, useFixedBase=True)
 
-    robot = p.loadURDF(URDF_PATH, useFixedBase=True)
+    eef_traj = []
 
-    results = []
-
-    for idx, joints in enumerate(joint_traj):
-        # set joint positions directly
-        for j in range(len(joints)-1):  # last element might be gripper
+    for joints in states:
+        time.sleep(0.001)  # adjust as needed for visualization speed
+        # Set joint positions (exclude last element = gripper)
+        for j in range(len(joints)-1):
             p.resetJointState(robot, j, joints[j])
-
         p.stepSimulation()
 
-        # get EEF pose
-        state = p.getLinkState(robot, EEF_INDEX)
-        pos = state[0]      # X, Y, Z
-        quat = state[1]     # quaternion
+        # Get EEF pose
+        state = p.getLinkState(robot, eef_index)
+        pos = state[0]  # X,Y,Z
+        quat = state[1] # quaternion
 
-        # convert quaternion to roll, pitch, yaw
-        rpy = p.getEulerFromQuaternion(quat)  # roll, pitch, yaw
-        results.append(list(pos) + list(rpy))
+        # Convert quaternion to roll, pitch, yaw
+        rpy = p.getEulerFromQuaternion(quat)
+        eef_traj.append(list(pos) + list(rpy))  # 6 numbers: X,Y,Z,R,P,Y
 
     p.disconnect()
-    return np.array(results)
+    return np.array(eef_traj, dtype=np.float32)
 
 
 # =========================================================
@@ -135,9 +128,19 @@ for folder in sorted(os.listdir(DATA_ROOT)):
     traj_path = os.path.join(DATA_ROOT, folder)
     if not os.path.isdir(traj_path):
         continue
-    bag_files = [f for f in os.listdir(traj_path) if f.endswith(".db3")]
+
+    # recursively search for .db3 files
+    bag_files = []
+    for root, dirs, files in os.walk(traj_path):
+        for f in files:
+            if f.endswith(".db3"):
+                bag_files.append(os.path.join(root, f))
+
     if not bag_files:
         continue
+
+    print(folder, "->", bag_files)
+    
     db3 = os.path.join(traj_path, bag_files[0])
 
     print(f"\nProcessing trajectory: {folder}")

@@ -125,9 +125,20 @@ for folder in sorted(os.listdir(DATA_ROOT)):
     traj_path = os.path.join(DATA_ROOT, folder)
     if not os.path.isdir(traj_path):
         continue
-    bag_files = [f for f in os.listdir(traj_path) if f.endswith(".db3")]
+
+    # recursively search for .db3 files
+    bag_files = []
+    for root, dirs, files in os.walk(traj_path):
+        for f in files:
+            if f.endswith(".db3"):
+                bag_files.append(os.path.join(root, f))
+
     if not bag_files:
         continue
-    process_traj(folder, os.path.join(traj_path, bag_files[0]))
+
+    print(folder, "->", bag_files)
+    process_traj(folder, bag_files[0])  # <-- FIXED
 
 print("\n✔ All trajectories processed")
+
+
