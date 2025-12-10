@@ -1,35 +1,31 @@
+import os
 import numpy as np
 import open3d as o3d
 import torch
 import pytorch3d.ops as torch3d_ops
 
-
 # ---------------------------
-# FARTHEST POINT SAMPLING (returns both XYZ + indices)
+# FARTHEST POINT SAMPLING
 # ---------------------------
-def farthest_point_sampling(points, num_points=1024, use_cuda=True):
+def farthest_point_sampling(points, num_points=2500, use_cuda=False):
     K = [num_points]
 
+    pc = torch.from_numpy(points).float()
     if use_cuda:
-        pc = torch.from_numpy(points).float().cuda()
-        sampled, idx = torch3d_ops.sample_farthest_points(
-            points=pc.unsqueeze(0), K=K
-        )
-        sampled = sampled.squeeze(0).cpu().numpy()
-        idx = idx.squeeze(0).cpu().numpy()
-    else:
-        pc = torch.from_numpy(points).float()
-        sampled, idx = torch3d_ops.sample_farthest_points(
-            points=pc.unsqueeze(0), K=K
-        )
-        sampled = sampled.squeeze(0).numpy()
-        idx = idx.squeeze(0).numpy()
+        pc = pc.cuda()
+
+    sampled, idx = torch3d_ops.sample_farthest_points(
+        points=pc.unsqueeze(0), K=K
+    )
+
+    sampled = sampled.squeeze(0).cpu().numpy()
+    idx = idx.squeeze(0).cpu().numpy()
 
     return sampled, idx
 
 
 # ---------------------------
-# WORKSPACE CROP + FPS (XYZ + RGB)
+# WORKSPACE CROP + FPS
 # ---------------------------
 def process_point_cloud(pc_xyz, pc_rgb):
     """
@@ -38,12 +34,11 @@ def process_point_cloud(pc_xyz, pc_rgb):
     """
 
     WORK_SPACE = [
-            [-0.855, 0.855],  # X range (Radius)
-            [-0.855, 0.855],  # Y range (Radius)
-            [-0.360, 1.190]   # Z range (Height limits)
-        ]
+        [-0.855, 0.855],  # X (radius)
+        [-0.855, 0.855],  # Y (radius)
+        [-0.360, 1.190]   # Z (height)
+    ]
 
-    # Crop
     mask = (
         (pc_xyz[:, 0] > WORK_SPACE[0][0]) & (pc_xyz[:, 0] < WORK_SPACE[0][1]) &
         (pc_xyz[:, 1] > WORK_SPACE[1][0]) & (pc_xyz[:, 1] < WORK_SPACE[1][1]) &
@@ -53,42 +48,66 @@ def process_point_cloud(pc_xyz, pc_rgb):
     pc_xyz = pc_xyz[mask]
     pc_rgb = pc_rgb[mask]
 
-    print(f"After crop: {pc_xyz.shape[0]} points")
+    print(f" → After crop: {pc_xyz.shape[0]} points")
 
-    # FPS (XYZ only)
+    # FPS
     pc_xyz_fps, idx = farthest_point_sampling(pc_xyz, num_points=2500, use_cuda=False)
-
-    # Use same indices to pick corresponding RGB
     pc_rgb_fps = pc_rgb[idx]
 
-    print(f"After FPS: {pc_xyz_fps.shape[0]} points")
+    print(f" → After FPS: {pc_xyz_fps.shape[0]} points")
 
     return pc_xyz_fps, pc_rgb_fps
 
 
 # ---------------------------
-# VISUALIZATION
+# SAVE PLY
 # ---------------------------
-def visualize(pc_xyz, pc_rgb):
+def save_ply(path, xyz, rgb):
     pcd = o3d.geometry.PointCloud()
-    pcd.points = o3d.utility.Vector3dVector(pc_xyz)
-    pcd.colors = o3d.utility.Vector3dVector(pc_rgb)
-    o3d.visualization.draw_geometries([pcd])
+    pcd.points = o3d.utility.Vector3dVector(xyz)
+    pcd.colors = o3d.utility.Vector3dVector(rgb)
+    o3d.io.write_point_cloud(path, pcd, write_ascii=False)
 
 
 # ---------------------------
-# MAIN
+# MAIN BATCH PROCESSOR
 # ---------------------------
-if __name__ == "__main__":
-    input_file = "./colored_pointcloud.ply"
+INPUT_ROOT = "./final-data/pc"
+OUTPUT_ROOT = "./filtered-pc"
 
-    pcd = o3d.io.read_point_cloud(input_file)
-    pc_xyz = np.asarray(pcd.points)
-    pc_rgb = np.asarray(pcd.colors)
+os.makedirs(OUTPUT_ROOT, exist_ok=True)
 
-    print(f"Loaded XYZ: {pc_xyz.shape}")
-    print(f"Loaded RGB: {pc_rgb.shape}")
+for folder in sorted(os.listdir(INPUT_ROOT)):
+    in_folder = os.path.join(INPUT_ROOT, folder)
+    if not os.path.isdir(in_folder):
+        continue
 
-    processed_xyz, processed_rgb = process_point_cloud(pc_xyz, pc_rgb)
+    out_folder = os.path.join(OUTPUT_ROOT, folder)
+    os.makedirs(out_folder, exist_ok=True)
 
-    visualize(processed_xyz, processed_rgb)
+    ply_files = sorted([f for f in os.listdir(in_folder) if f.endswith(".ply")])
+
+    print(f"\n=== Processing folder: {folder} ({len(ply_files)} clouds) ===")
+
+    for fn in ply_files:
+        in_path = os.path.join(in_folder, fn)
+        out_path = os.path.join(out_folder, fn.replace(".ply", "_filtered.ply"))
+
+        print(f"\nProcessing {fn} ...")
+
+        # Load
+        pcd = o3d.io.read_point_cloud(in_path)
+        pc_xyz = np.asarray(pcd.points)
+        pc_rgb = np.asarray(pcd.colors)
+
+        print(f"Loaded XYZ: {pc_xyz.shape} | RGB: {pc_rgb.shape}")
+
+        # Filter
+        xyz_f, rgb_f = process_point_cloud(pc_xyz, pc_rgb)
+
+        # Save
+        save_ply(out_path, xyz_f, rgb_f)
+
+        print(f"Saved → {out_path}")
+
+print("\n✔ Done. All filtered clouds saved in ./filtered-pc/")

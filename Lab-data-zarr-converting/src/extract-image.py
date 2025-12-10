@@ -21,7 +21,7 @@ GRIPPER_TOPIC = "/gripper/state"
 # -----------------------
 def get_image_info(encoding):
     if encoding in ["mono8", "8UC1"]:
-        return np.uint8, 1
+        return np.uint8, 14
     if encoding in ["mono16", "16UC1", "16SC1"]:
         return np.uint16, 1
     if encoding in ["rgb8", "bgr8"]:
