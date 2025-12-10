@@ -7,6 +7,10 @@ from rclpy.serialization import deserialize_message
 from rosidl_runtime_py.utilities import get_message
 from bisect import bisect_left
 
+
+"""
+NOTE : action[t] = state[t] - state[t-1] -> how its done in droid .. 
+"""
 # =========================================================
 # CONFIG
 # =========================================================
@@ -132,6 +136,7 @@ def process_traj(traj_name, db3_path):
     joint_sync = np.array([joint_buf[i] for i in joint_idx])
     grip_sync = np.array([grip_buf[i] for i in grip_idx])
 
+    print(f"Synchronized frames: {len(depth_sync)}") 
     # save rgb + point cloud + states
     states = []
     for i, depth in enumerate(depth_sync):
