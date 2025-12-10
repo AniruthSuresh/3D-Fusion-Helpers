@@ -86,29 +86,40 @@ def read_joint_gripper(db3_path):
 
     return states, actions
 
-def simulate_eef(states, urdf_path, eef_index):
-    """Simulate PyBullet robot to get EEF pose for each state."""
-    p.connect(p.GUI)
+# ------------------------------
+# SIMULATE AND RECORD EEF POSE
+# ------------------------------
+def simulate_and_record(states_file):
+    joint_traj = np.loadtxt(states_file)
+    print(f"Loaded {joint_traj.shape[0]} synchronized joint frames")
+
+    print("Starting PyBullet simulation...")
+    p.connect(p.DIRECT)  # use GUI if you want to visualize
     p.setAdditionalSearchPath(pybullet_data.getDataPath())
-    robot = p.loadURDF(urdf_path, useFixedBase=True)
 
-    eef_traj = []
+    robot = p.loadURDF(URDF_PATH, useFixedBase=True)
 
-    for joints in states:
-        # Set joint positions
-        time.sleep(0.00001)
-        for j in range(len(joints)-1):
+    results = []
+
+    for idx, joints in enumerate(joint_traj):
+        # set joint positions directly
+        for j in range(len(joints)-1):  # last element might be gripper
             p.resetJointState(robot, j, joints[j])
+
         p.stepSimulation()
 
-        # Get EEF pose
-        state = p.getLinkState(robot, eef_index)
-        pos = state[0]
-        quat = state[1]
-        eef_traj.append(list(pos) + list(quat))
+        # get EEF pose
+        state = p.getLinkState(robot, EEF_INDEX)
+        pos = state[0]      # X, Y, Z
+        quat = state[1]     # quaternion
+
+        # convert quaternion to roll, pitch, yaw
+        rpy = p.getEulerFromQuaternion(quat)  # roll, pitch, yaw
+        results.append(list(pos) + list(rpy))
 
     p.disconnect()
-    return np.array(eef_traj, dtype=np.float32)
+    return np.array(results)
+
 
 # =========================================================
 # MAIN LOOP OVER TRAJECTORIES
