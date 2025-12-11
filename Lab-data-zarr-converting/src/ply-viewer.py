@@ -12,7 +12,7 @@ def visualize(pc_xyz, pc_rgb=None):
 
 
 if __name__ == "__main__":
-    input_file = "/home/aniruth/Desktop/RRC/3D-Fusion-Helpers/Lab-data-zarr-converting/src/final-data/pc/sync_data_bag_21/cloud_00004.ply"
+    input_file = "/home/aniruth/Desktop/RRC/3D-Fusion-Helpers/Lab-data-zarr-converting/src/final-data/sync_data_bag_21/cloud_00057_filtered.ply"
 
     pcd = o3d.io.read_point_cloud(input_file)
 
