@@ -42,7 +42,7 @@ def process_point_cloud(pc_xyz, pc_rgb):
     mask = (
         (pc_xyz[:, 0] > WORK_SPACE[0][0]) & (pc_xyz[:, 0] < WORK_SPACE[0][1]) &
         (pc_xyz[:, 1] > WORK_SPACE[1][0]) & (pc_xyz[:, 1] < WORK_SPACE[1][1]) &
-        (pc_xyz[:, 2] > WORK_SPACE[2][0]) & (pc_xyz[:, 2] < WORK_SPACE[2][1])
+        (pc_xyz[:, 2] > WORK_SPACE[2][0]) & (pc2_xyz[:, 2] < WORK_SPACE[2][1])
     )
 
     pc_xyz = pc_xyz[mask]
