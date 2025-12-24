@@ -17,7 +17,8 @@ p.resetDebugVisualizerCamera(
 p.loadURDF("plane.urdf")
 
 # ---------- Load Panda ----------
-urdf_path = "./Exact_Panda/bullet3/examples/pybullet/gym/pybullet_data/franka_panda/panda_with_2F85_sec.urdf"
+# urdf_path = "./Exact_Panda/bullet3/examples/pybullet/gym/pybullet_data/franka_panda/panda_with_2F85_sec.urdf"
+urdf_path = "/home/aniruth/Desktop/RRC/3D-Fusion-Helpers/ur5-object-picking/urdf/ur5_robotiq_85.urdf"
 robot_id = p.loadURDF(urdf_path, [0, 0, 0], useFixedBase=True)
 
 # ---------- Print ALL Joint Details ----------
