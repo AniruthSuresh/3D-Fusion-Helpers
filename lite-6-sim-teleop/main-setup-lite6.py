@@ -110,7 +110,7 @@ move_ik_steps(robot_id, eef_idx, start_above, pre_grasp, down_orn, steps=30, for
 
 control_gripper_synchronized(robot_id, start_open=1.0, end_open=0.02, steps=650)
 
-move_ik_steps(robot_id, eef_idx, pre_grasp, lift, down_orn, steps=1000, force=150)
+move_ik_steps(robot_id, eef_idx, pre_grasp, lift, down_orn, steps=1000, force=650)
 
 print("✅ Cube picked slowly and safely")
 

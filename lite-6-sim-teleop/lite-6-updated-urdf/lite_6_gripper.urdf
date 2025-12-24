@@ -31,11 +31,14 @@
       </geometry>
     </collision>
   </link>
-  <joint name="left_finger_joint" type="fixed">
+  <joint name="left_finger_joint" type="prismatic">
     <parent link="base_link"/>
     <child link="left_finger"/>
-    <!-- <origin xyz="0 0 0" rpy="0 0 0"/> -->
+    <origin xyz="0 0 0" rpy="0 0 0"/>
+    <axis xyz="1 0 0"/> <!-- move along X axis; adjust if needed -->
+    <limit lower="0.0" upper="0.04" effort="120" velocity="0.1"/>
   </joint>
+
   <!-- Right finger -->
   <link name="right_finger">
     <visual>
@@ -49,10 +52,12 @@
       </geometry>
     </collision>
   </link>
-  <joint name="right_finger_joint" type="fixed">
+  <joint name="right_finger_joint" type="prismatic">
     <parent link="base_link"/>
     <child link="right_finger"/>
-    <!-- <origin xyz="0 0 0" rpy="0 0 0"/> -->
+    <origin xyz="0 0 0" rpy="0 0 0"/>
+    <axis xyz="-1 0 0"/> <!-- opposite direction to left finger -->
+    <limit lower="0.0" upper="0.04" effort="120" velocity="0.1"/>
   </joint>
 
 </robot>
