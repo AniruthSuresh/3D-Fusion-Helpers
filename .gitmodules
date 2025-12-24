@@ -1,3 +1,0 @@
-[submodule "ur5_grasp_object"]
-	path = ur5_grasp_object
-	url = https://github.com/leesweqq/ur5_grasp_object_pybullet.git
