@@ -108,14 +108,27 @@ control_gripper(robot_id, open_ratio=0.0)
 down_orn = p.getQuaternionFromEuler([np.pi, 0, 0])
 
 above_cube = [0.55, 0.0, 0.25]
-grasp_pose = [0.55, 0.0, 0.07]
+
+cube_pos, _ = p.getBasePositionAndOrientation(cube_id)
+cube_z = cube_pos[2]
+
+GRIPPER_LEN = 0.1612
+CUBE_HALF = 0.02
+SAFETY = 0.01
+
+grasp_pose = [
+    cube_pos[0],
+    cube_pos[1],
+    cube_z + CUBE_HALF + GRIPPER_LEN + SAFETY
+]
+
 lift_pose  = [0.55, 0.0, 0.30]
 
 # Move above cube
 move_ik_steps(robot_id, eef_idx, above_cube, down_orn)
 
 # # Move down slowly
-move_ik_steps(robot_id, eef_idx, grasp_pose, down_orn, steps=120)
+# move_ik_steps(robot_id, eef_idx, grasp_pose, down_orn, steps=120)
 
 # # Close gripper slowly (grasp)
 # control_gripper(robot_id, open_ratio=1.0, steps=200)
