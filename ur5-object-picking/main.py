@@ -61,6 +61,12 @@ class UR5Robotiq85:
     def __setup_mimic_joints__(self):
         """
         Set up mimic joints for the gripper to enable synchronized motion.
+        Purpose: For the Robotiq gripper, multiple finger joints are mechanically linked (“mimic joints”), so they move together.
+
+        How it works:
+
+           1.  Finds the parent joint (finger_joint) and all child joints.
+           2.  Uses p.createConstraint with JOINT_GEAR to link children to the parent with specific multipliers.
         """
         mimic_parent_name = 'finger_joint'
         mimic_children_names = {
@@ -199,11 +205,9 @@ def move_and_grab_cube(robot, tray_pos, counter):
         robot.move_gripper(0.085)  # Open the gripper
         update_simulation(50)
 
-        # Update the displayed counter
-        counter += 1  # Increment the counter
-        # Update the text displayed above the tray
-        p.addUserDebugText(f"Count: {counter}",textColorRGB=[255, 0, 0], textPosition=[tray_pos[0], tray_pos[1], tray_pos[2] + 0.3],
-                           textSize=3, lifeTime=10)  
+        
+        # Remove the cube from simulation
+        p.removeBody(cube_id)
 
 def main():
     tray_pos, tray_orn = setup_simulation()
