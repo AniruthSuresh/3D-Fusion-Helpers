@@ -136,6 +136,9 @@ def depth_to_point_cloud(depth_buffer, view_matrix, proj_matrix, width=224, heig
 
 def update_simulation(steps, sleep_time=0.01, capture_frames=False, iter_folder=None, frame_counter=None):
     """Update simulation and optionally capture frames"""
+
+    rgb_dir, depth_dir, pcd_dir = create_data_folders(iter_folder)
+
     for _ in range(steps):
         p.stepSimulation()
         # time.sleep(sleep_time)
@@ -166,21 +169,20 @@ def update_simulation(steps, sleep_time=0.01, capture_frames=False, iter_folder=
             # Convert depth to point cloud
             point_cloud = depth_to_point_cloud(depth_buffer, view_matrix_tp, proj_matrix)
             
-            # Save RGB image
-            frame_path_rgb = os.path.join(iter_folder, f"tp_rgb_{frame_counter[0]:04d}.png")
+            # ---- Save RGB ----
+            frame_path_rgb = os.path.join(rgb_dir, f"tp_rgb_{frame_counter[0]:04d}.png")
             cv2.imwrite(frame_path_rgb, cv2.cvtColor(rgb_tp, cv2.COLOR_RGB2BGR))
-            
-            
-            # Save raw depth as numpy array
-            depth_raw_path = os.path.join(iter_folder, f"tp_depth_{frame_counter[0]:04d}.npy")
+
+            # ---- Save Depth ----
+            depth_raw_path = os.path.join(depth_dir, f"tp_depth_{frame_counter[0]:04d}.npy")
             np.save(depth_raw_path, depth_buffer)
-            
-            # Save point cloud as numpy array
-            pcd_path = os.path.join(iter_folder, f"tp_pcd_{frame_counter[0]:04d}.npy")
+
+            # ---- Save Point Cloud ----
+            pcd_path = os.path.join(pcd_dir, f"tp_pcd_{frame_counter[0]:04d}.npy")
             np.save(pcd_path, point_cloud)
-            
-            # Optionally save as PLY format for visualization in MeshLab/CloudCompare
-            ply_path = os.path.join(iter_folder, f"tp_pcd_{frame_counter[0]:04d}.ply")
+
+            # ---- Save PLY ----
+            ply_path = os.path.join(pcd_dir, f"tp_pcd_{frame_counter[0]:04d}.ply")
             save_point_cloud_ply(point_cloud, rgb_tp.reshape(-1, 3), ply_path)
             
             frame_counter[0] += 1
