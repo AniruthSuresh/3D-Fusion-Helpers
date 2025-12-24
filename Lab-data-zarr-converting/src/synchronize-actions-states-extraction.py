@@ -11,17 +11,15 @@ from rosidl_runtime_py.utilities import get_message
 # -------------------------
 # CONFIG
 # -------------------------
-DATA_ROOT = "../data"         # top-level folder containing trajectory subfolders
-OUTPUT_ROOT = "./final-data"  # output root
+DATA_ROOT = "../data"        
+OUTPUT_ROOT = "./final-data"  
 
-# Topics
 CTRL_TOPIC    = "/lite6_traj_controller/controller_state"  
 RGB_TOPIC     = "/camera/camera/color/image_raw"
 DEPTH_TOPIC   = "/camera/camera/depth/image_rect_raw"
 JOINT_TOPIC   = "/ufactory/joint_states"
 GRIP_STATE    = "/gripper/state"      
 
-# Camera intrinsics
 fx = 325.4990539550781
 fy = 325.4990539550781
 cx = 319.9093322753906
