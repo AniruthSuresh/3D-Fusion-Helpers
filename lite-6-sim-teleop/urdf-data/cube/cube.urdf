@@ -2,9 +2,10 @@
 <robot name="cube">
 
   <link name="baseLink">
+
     <visual>
       <geometry>
-        <box size="0.1 0.1 0.1"/>
+        <box size="0.03 0.03 0.03"/>
       </geometry>
       <material name="orange">
         <color rgba="1.0 0.55 0.0 1.0"/>
@@ -13,17 +14,18 @@
 
     <collision>
       <geometry>
-        <box size="0.1 0.1 0.1"/>
+        <box size="0.03 0.03 0.03"/>
       </geometry>
     </collision>
 
     <inertial>
-      <mass value="1.0"/>
+      <mass value="0.5"/>
       <inertia
-        ixx="0.001" ixy="0.0" ixz="0.0"
-        iyy="0.001" iyz="0.0"
-        izz="0.001"/>
+        ixx="0.00001" ixy="0.0" ixz="0.0"
+        iyy="0.00001" iyz="0.0"
+        izz="0.00001"/>
     </inertial>
+
   </link>
 
 </robot>

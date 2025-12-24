@@ -19,7 +19,7 @@ plane_id = p.loadURDF("plane.urdf")
 # Load your URDF
 # Replace this path with your own URDF file
 robot_id = p.loadURDF(
-    "./urdf-data/cube/cube.urdf",
+    "./urdf-data/tray/tray.urdf",
     basePosition=[0, 0, 0],
     useFixedBase=True
 )
