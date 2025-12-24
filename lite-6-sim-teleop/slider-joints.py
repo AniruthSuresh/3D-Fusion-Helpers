@@ -11,57 +11,75 @@ p.resetDebugVisualizerCamera(
     cameraDistance=1.2,
     cameraYaw=60,
     cameraPitch=-30,
-    cameraTargetPosition=[0, 0, 0.3]
+    cameraTargetPosition=[0.3, 0, 0.3]
 )
 
-# ---------- Load Robot ----------
-urdf_path = "./lite-6-updated-urdf/lite_6_new.urdf"
-robot_id = p.loadURDF(
-    urdf_path,
-    basePosition=[0, 0, 0],
-    useFixedBase=True
-)
+p.loadURDF("plane.urdf")
+
+# ---------- Load Panda ----------
+urdf_path = "./Exact_Panda/bullet3/examples/pybullet/gym/pybullet_data/franka_panda/panda_with_2F85_sec.urdf"
+robot_id = p.loadURDF(urdf_path, [0, 0, 0], useFixedBase=True)
+
+# ---------- Print ALL Joint Details ----------
+num_joints = p.getNumJoints(robot_id)
+print(f"\n=== Panda Joint Info ({num_joints}) ===\n")
+
+JOINT_TYPES = {
+    p.JOINT_REVOLUTE: "REVOLUTE",
+    p.JOINT_PRISMATIC: "PRISMATIC",
+    p.JOINT_FIXED: "FIXED"
+}
+
+for j in range(num_joints):
+    info = p.getJointInfo(robot_id, j)
+    print(f"""
+Joint {j}
+  Name      : {info[1].decode()}
+  Type      : {JOINT_TYPES.get(info[2])}
+  Link name : {info[12].decode()}
+  Limits    : [{info[8]}, {info[9]}]
+""")
 
 # ---------- Create Sliders ----------
 joint_sliders = {}
-gripper_joints = set()
-
-num_joints = p.getNumJoints(robot_id)
-print(f"Total joints: {num_joints}")
+gripper_joints = []
 
 for j in range(num_joints):
     info = p.getJointInfo(robot_id, j)
     joint_name = info[1].decode("utf-8")
     joint_type = info[2]
 
+    # Only movable joints
     if joint_type not in [p.JOINT_REVOLUTE, p.JOINT_PRISMATIC]:
         continue
 
-    # ---- Detect gripper joints ----
-    is_gripper = any(k in joint_name.lower() for k in ["finger", "gripper"])
+    # ✅ CORRECT Panda gripper detection
+    is_gripper = (
+        joint_type == p.JOINT_PRISMATIC
+        and "finger" in joint_name.lower()
+    )
 
     if is_gripper:
-        # Small & safe range for gripper
-        lower, upper = -0.04, 0.0
-        start = -0.02
-        gripper_joints.add(j)
+        lower, upper = 0.0, 0.04   # meters
+        start = 0.04               # fully open
+        gripper_joints.append(j)
     else:
-        lower = info[8]
-        upper = info[9]
+        lower, upper = info[8], info[9]
         if lower > upper:
             lower, upper = -3.14, 3.14
         start = 0.0
 
     slider = p.addUserDebugParameter(
-        paramName=f"{j}:{joint_name}",
-        rangeMin=lower,
-        rangeMax=upper,
-        startValue=start
+        f"{j}:{joint_name}",
+        lower,
+        upper,
+        start
     )
 
     joint_sliders[j] = slider
 
-print("Gripper joints:", gripper_joints)
+print("✅ Gripper joints detected:", gripper_joints)
+# Expected: [9, 10]
 
 # ---------- Control Loop ----------
 while True:
@@ -71,12 +89,12 @@ while True:
         force = 100 if joint_id in gripper_joints else 500
 
         p.setJointMotorControl2(
-            bodyIndex=robot_id,
-            jointIndex=joint_id,
-            controlMode=p.POSITION_CONTROL,
+            robot_id,
+            joint_id,
+            p.POSITION_CONTROL,
             targetPosition=target,
             force=force
         )
 
     p.stepSimulation()
-    time.sleep(1.0 / 240.0)
+    time.sleep(1 / 240)
