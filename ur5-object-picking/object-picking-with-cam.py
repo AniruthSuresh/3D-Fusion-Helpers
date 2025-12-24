@@ -84,6 +84,55 @@ class UR5Robotiq85:
     def get_current_ee_position(self):
         eef_state = p.getLinkState(self.id, self.eef_id)
         return eef_state
+    
+def create_data_folders(iter_folder):
+    rgb_dir = os.path.join(iter_folder, "rgb")
+    depth_dir = os.path.join(iter_folder, "depth")
+    pcd_dir = os.path.join(iter_folder, "pcd")
+
+    os.makedirs(rgb_dir, exist_ok=True)
+    os.makedirs(depth_dir, exist_ok=True)
+    os.makedirs(pcd_dir, exist_ok=True)
+
+    return rgb_dir, depth_dir, pcd_dir
+
+
+
+def depth_to_point_cloud(depth_buffer, view_matrix, proj_matrix, width=224, height=224):
+    """Convert depth buffer to 3D point cloud"""
+    # Get camera parameters from projection matrix
+    fov = 60
+    aspect = 1.0
+    near = 0.01
+    far = 3.0
+    
+    # Convert depth buffer to actual depth values
+    depth_img = far * near / (far - (far - near) * depth_buffer)
+    
+    # Create pixel grid
+    fx = fy = width / (2 * np.tan(np.radians(fov) / 2))
+    cx, cy = width / 2, height / 2
+    
+    # Get view matrix as numpy array
+    view_matrix_np = np.array(view_matrix).reshape(4, 4).T
+    
+    # Create meshgrid for pixel coordinates
+    u, v = np.meshgrid(np.arange(width), np.arange(height))
+    
+    # Convert to 3D coordinates in camera frame
+    z = depth_img
+    x = (u - cx) * z / fx
+    y = -(v - cy) * z / fy  # Negative because image y-axis points down
+    
+    # Stack into point cloud (N x 3)
+    points_camera = np.stack([x, y, z], axis=-1).reshape(-1, 3)
+    
+    # Transform to world coordinates
+    points_camera_homogeneous = np.concatenate([points_camera, np.ones((points_camera.shape[0], 1))], axis=1)
+    view_matrix_inv = np.linalg.inv(view_matrix_np)
+    points_world = (view_matrix_inv @ points_camera_homogeneous.T).T[:, :3]
+    
+    return points_world
 
 def update_simulation(steps, sleep_time=0.01, capture_frames=False, iter_folder=None, frame_counter=None):
     """Update simulation and optionally capture frames"""
@@ -92,20 +141,74 @@ def update_simulation(steps, sleep_time=0.01, capture_frames=False, iter_folder=
         # time.sleep(sleep_time)
         
         if capture_frames and iter_folder is not None and frame_counter is not None:
-            # Capture third-person camera
+            # Camera parameters
             view_matrix_tp = p.computeViewMatrix(
-                cameraEyePosition=[1.2, 0, 1], 
-                cameraTargetPosition=[0, 0, 0.7],
+                cameraEyePosition=[1.1, -0.6, 1.3],   # higher + right
+                cameraTargetPosition=[0.5, 0.3, 0.7], # center of scene (tray + robot)
                 cameraUpVector=[0, 0, 1]
             )
+
             proj_matrix = p.computeProjectionMatrixFOV(fov=60, aspect=1.0, nearVal=0.01, farVal=3.0)
-            width, height, rgb_tp, _, _ = p.getCameraImage(224, 224, viewMatrix=view_matrix_tp, projectionMatrix=proj_matrix)
+            
+            # Capture RGB and Depth
+            width, height, rgb_tp, depth_tp, _ = p.getCameraImage(
+                224, 224, 
+                viewMatrix=view_matrix_tp, 
+                projectionMatrix=proj_matrix
+            )
+            
+            # Process RGB
             rgb_tp = np.array(rgb_tp)[:, :, :3]
             
-            # Save frame
-            frame_path = os.path.join(iter_folder, f"tp_{frame_counter[0]:04d}.png")
-            cv2.imwrite(frame_path, cv2.cvtColor(rgb_tp, cv2.COLOR_RGB2BGR))
+            # Process Depth
+            depth_buffer = np.array(depth_tp)
+            
+            # Convert depth to point cloud
+            point_cloud = depth_to_point_cloud(depth_buffer, view_matrix_tp, proj_matrix)
+            
+            # Save RGB image
+            frame_path_rgb = os.path.join(iter_folder, f"tp_rgb_{frame_counter[0]:04d}.png")
+            cv2.imwrite(frame_path_rgb, cv2.cvtColor(rgb_tp, cv2.COLOR_RGB2BGR))
+            
+            
+            # Save raw depth as numpy array
+            depth_raw_path = os.path.join(iter_folder, f"tp_depth_{frame_counter[0]:04d}.npy")
+            np.save(depth_raw_path, depth_buffer)
+            
+            # Save point cloud as numpy array
+            pcd_path = os.path.join(iter_folder, f"tp_pcd_{frame_counter[0]:04d}.npy")
+            np.save(pcd_path, point_cloud)
+            
+            # Optionally save as PLY format for visualization in MeshLab/CloudCompare
+            ply_path = os.path.join(iter_folder, f"tp_pcd_{frame_counter[0]:04d}.ply")
+            save_point_cloud_ply(point_cloud, rgb_tp.reshape(-1, 3), ply_path)
+            
             frame_counter[0] += 1
+
+def save_point_cloud_ply(points, colors, filename):
+    """Save point cloud in PLY format with colors"""
+    # Filter out points that are too far (likely background/invalid)
+    valid_mask = points[:, 2] < 2.5  # Keep points closer than 2.5m
+    points = points[valid_mask]
+    colors = colors[valid_mask]
+    
+    with open(filename, 'w') as f:
+        # Write PLY header
+        f.write("ply\n")
+        f.write("format ascii 1.0\n")
+        f.write(f"element vertex {len(points)}\n")
+        f.write("property float x\n")
+        f.write("property float y\n")
+        f.write("property float z\n")
+        f.write("property uchar red\n")
+        f.write("property uchar green\n")
+        f.write("property uchar blue\n")
+        f.write("end_header\n")
+        
+        # Write point data
+        for point, color in zip(points, colors):
+            f.write(f"{point[0]:.6f} {point[1]:.6f} {point[2]:.6f} ")
+            f.write(f"{int(color[0])} {int(color[1])} {int(color[2])}\n")
 
 def setup_simulation():
     p.connect(p.GUI)
