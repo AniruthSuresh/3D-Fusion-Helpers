@@ -7,11 +7,13 @@ import open3d as o3d
 import rosbag2_py
 from rclpy.serialization import deserialize_message
 from rosidl_runtime_py.utilities import get_message
+import pybullet as p
+import pybullet_data
 
 # -------------------------
 # CONFIG
 # -------------------------
-DATA_ROOT = "../data"         # top-level folder containing trajectory subfolders
+DATA_ROOT = "."         # top-level folder containing trajectory subfolders
 OUTPUT_ROOT = "./final-data"  # output root
 
 # Topics
@@ -26,6 +28,19 @@ fx = 325.4990539550781
 fy = 325.4990539550781
 cx = 319.9093322753906
 cy = 180.0956268310547
+
+# Robot FK configuration
+URDF_PATH = "/home/varun-edachali/Research/RRC/policy/data/3D-Fusion-Helpers/lite-6-sim-teleop/lite-6-updated-urdf/lite_6_new.urdf"
+EEF_INDEX = 6
+
+# EEF to Camera transform (4x4 homogeneous matrix)
+# Calibrated Camera-to-End-Effector transformation
+EEF_TO_CAMERA = np.array([
+    [ 0.00903555,  0.10281995,  0.99465895,  0.07002748],
+    [-0.00194421, -0.99469586,  0.10284143, -0.01914177],
+    [ 0.99995729, -0.00286305, -0.00878767,  0.03685897],
+    [ 0.0,         0.0,         0.0,         1.0]
+], dtype=np.float32)
 
 # -------------------------
 # HELPERS
@@ -95,6 +110,24 @@ def extract_positions_from_ctrl_msg(msg):
 
     print("⚠️ Warning: controller_state has no usable joint position fields → using zeros")
     return np.zeros(6, dtype=np.float32)
+
+def pos_quat_to_matrix(pos, quat):
+    """Convert position [x,y,z] and quaternion [x,y,z,w] to 4x4 homogeneous matrix."""
+    R = p.getMatrixFromQuaternion(quat)
+    T = np.eye(4, dtype=np.float32)
+    T[:3, :3] = np.array(R, dtype=np.float32).reshape(3, 3)
+    T[:3, 3] = pos
+    return T
+
+def compute_eef_pose(robot_id, joint_angles):
+    """Compute end effector pose from joint angles using FK."""
+    for j in range(len(joint_angles)):
+        p.resetJointState(robot_id, j, joint_angles[j])
+    p.stepSimulation()
+    state = p.getLinkState(robot_id, EEF_INDEX)
+    pos = np.array(state[0], dtype=np.float32)
+    quat = np.array(state[1], dtype=np.float32)
+    return pos, quat
 
 # -------------------------
 # MAIN processing
@@ -174,19 +207,27 @@ def process_traj(traj_name, db3_path):
 
     print(f"  synchronized frames (master /gripper/state): {N}")
 
+    # Initialize PyBullet for FK computation
+    p.connect(p.DIRECT)
+    p.setAdditionalSearchPath(pybullet_data.getDataPath())
+    robot = p.loadURDF(URDF_PATH, useFixedBase=True)
+
     # OUTPUT dirs
     rgb_out = os.path.join(OUTPUT_ROOT, "rgb", traj_name)
     pc_out  = os.path.join(OUTPUT_ROOT, "pc", traj_name)
     states_out_dir = os.path.join(OUTPUT_ROOT, "states")
     actions_out_dir= os.path.join(OUTPUT_ROOT, "actions")
+    extrinsics_out_dir = os.path.join(OUTPUT_ROOT, "extrinsics")
     os.makedirs(rgb_out, exist_ok=True)
     os.makedirs(pc_out, exist_ok=True)
     os.makedirs(states_out_dir, exist_ok=True)
     os.makedirs(actions_out_dir, exist_ok=True)
+    os.makedirs(extrinsics_out_dir, exist_ok=True)
 
     states = []
     ctrl_positions_for_actions = []
     grip_state_arr = []
+    camera_extrinsics = []
 
     saved = 0
     for i in range(N):
@@ -230,15 +271,23 @@ def process_traj(traj_name, db3_path):
         ctrl_positions_for_actions.append(ctrl_positions[:6])
         grip_state_arr.append(grip_state)
 
+        # Compute camera extrinsics via FK
+        eef_pos, eef_quat = compute_eef_pose(robot, jvals)
+        T_base_eef = pos_quat_to_matrix(eef_pos, eef_quat)
+        T_base_camera = T_base_eef @ EEF_TO_CAMERA
+        camera_extrinsics.append(T_base_camera.flatten())
+
         saved += 1
 
     if saved == 0:
         print("  -> No frames saved for this trajectory.")
+        p.disconnect()
         return
 
     states = np.vstack(states).astype(np.float32)
     ctrl_pos = np.vstack(ctrl_positions_for_actions).astype(np.float32)
     grip_state_arr = np.array(grip_state_arr, dtype=np.float32)
+    camera_extrinsics = np.vstack(camera_extrinsics).astype(np.float32)
 
     # --- Compute actions ---
     actions = np.zeros_like(states, dtype=np.float32)
@@ -253,6 +302,7 @@ def process_traj(traj_name, db3_path):
     nonzero_idx = np.any(actions != 0, axis=1)
     states = states[nonzero_idx]
     actions = actions[nonzero_idx]
+    camera_extrinsics = camera_extrinsics[nonzero_idx]
 
     # Print which frames are being removed
     removed_frames = np.where(~nonzero_idx)[0]
@@ -268,15 +318,21 @@ def process_traj(traj_name, db3_path):
             pass
 
 
-    # Save states/actions
+    # Save states/actions/extrinsics
     states_file = os.path.join(states_out_dir, f"{traj_name}.txt")
     actions_file= os.path.join(actions_out_dir, f"{traj_name}.txt")
+    extrinsics_file = os.path.join(extrinsics_out_dir, f"{traj_name}.txt")
     np.savetxt(states_file, states, fmt="%.6f")
     np.savetxt(actions_file, actions, fmt="%.6f")
+    np.savetxt(extrinsics_file, camera_extrinsics, fmt="%.6f")
+
+    # Disconnect PyBullet
+    p.disconnect()
 
     print(f"  Saved {len(states)} frames (non-zero actions).")
     print(f"  States -> {states_file}  (shape: {states.shape})")
     print(f"  Actions -> {actions_file} (shape: {actions.shape})")
+    print(f"  Extrinsics -> {extrinsics_file} (shape: {camera_extrinsics.shape})")
     print(f"  RGBs -> {rgb_out}")
     print(f"  PCs  -> {pc_out}")
 
