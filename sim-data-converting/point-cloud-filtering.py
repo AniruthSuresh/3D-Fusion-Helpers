@@ -42,7 +42,7 @@ def process_point_cloud(pc_xyz, pc_rgb):
     mask = (
         (pc_xyz[:, 0] > WORK_SPACE[0][0]) & (pc_xyz[:, 0] < WORK_SPACE[0][1]) &
         (pc_xyz[:, 1] > WORK_SPACE[1][0]) & (pc_xyz[:, 1] < WORK_SPACE[1][1]) &
-        (pc_xyz[:, 2] > WORK_SPACE[2][0]) & (pc2_xyz[:, 2] < WORK_SPACE[2][1])
+        (pc_xyz[:, 2] > WORK_SPACE[2][0]) & (pc_xyz[:, 2] < WORK_SPACE[2][1])
     )
 
     pc_xyz = pc_xyz[mask]
@@ -72,42 +72,55 @@ def save_ply(path, xyz, rgb):
 # ---------------------------
 # MAIN BATCH PROCESSOR
 # ---------------------------
-INPUT_ROOT = "./final-data/pc"
+INPUT_ROOT = "./processed-sim-data"
 OUTPUT_ROOT = "./filtered-pc"
 
 os.makedirs(OUTPUT_ROOT, exist_ok=True)
 
-for folder in sorted(os.listdir(INPUT_ROOT)):
-    in_folder = os.path.join(INPUT_ROOT, folder)
-    if not os.path.isdir(in_folder):
+# Process both cameras
+for camera in ["third_person_pc", "wrist_pc"]:
+    camera_root = os.path.join(INPUT_ROOT, camera)
+
+    if not os.path.exists(camera_root):
+        print(f"Skipping {camera} (not found)")
         continue
 
-    out_folder = os.path.join(OUTPUT_ROOT, folder)
-    os.makedirs(out_folder, exist_ok=True)
+    camera_name = "third_person" if camera == "third_person_pc" else "wrist"
+    camera_out_root = os.path.join(OUTPUT_ROOT, camera_name)
+    os.makedirs(camera_out_root, exist_ok=True)
 
-    ply_files = sorted([f for f in os.listdir(in_folder) if f.endswith(".ply")])
+    print(f"\n{'='*60}")
+    print(f"Processing {camera_name} camera")
+    print(f"{'='*60}")
 
-    print(f"\n=== Processing folder: {folder} ({len(ply_files)} clouds) ===")
+    # Process each iteration
+    for iter_folder in sorted(os.listdir(camera_root)):
+        in_folder = os.path.join(camera_root, iter_folder)
+        if not os.path.isdir(in_folder):
+            continue
 
-    for fn in ply_files:
-        in_path = os.path.join(in_folder, fn)
-        out_path = os.path.join(out_folder, fn.replace(".ply", "_filtered.ply"))
+        out_folder = os.path.join(camera_out_root, iter_folder)
+        os.makedirs(out_folder, exist_ok=True)
 
-        print(f"\nProcessing {fn} ...")
+        ply_files = sorted([f for f in os.listdir(in_folder) if f.endswith(".ply")])
 
-        # Load
-        pcd = o3d.io.read_point_cloud(in_path)
-        pc_xyz = np.asarray(pcd.points)
-        pc_rgb = np.asarray(pcd.colors)
+        print(f"\n=== {iter_folder}: {len(ply_files)} clouds ===")
 
-        print(f"Loaded XYZ: {pc_xyz.shape} | RGB: {pc_rgb.shape}")
+        for fn in ply_files:
+            in_path = os.path.join(in_folder, fn)
+            out_path = os.path.join(out_folder, fn.replace(".ply", "_filtered.ply"))
 
-        # Filter
-        xyz_f, rgb_f = process_point_cloud(pc_xyz, pc_rgb)
+            # Load
+            pcd = o3d.io.read_point_cloud(in_path)
+            pc_xyz = np.asarray(pcd.points)
+            pc_rgb = np.asarray(pcd.colors)
 
-        # Save
-        save_ply(out_path, xyz_f, rgb_f)
+            # Filter
+            xyz_f, rgb_f = process_point_cloud(pc_xyz, pc_rgb)
 
-        print(f"Saved → {out_path}")
+            # Save
+            save_ply(out_path, xyz_f, rgb_f)
+
+        print(f"  Saved → {out_folder}/")
 
 print("\n✔ Done. All filtered clouds saved in ./filtered-pc/")
