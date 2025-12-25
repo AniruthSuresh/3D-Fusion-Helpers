@@ -110,7 +110,6 @@ def save_ply(path, xyz, rgb):
     pcd.colors = o3d.utility.Vector3dVector(rgb)
     o3d.io.write_point_cloud(path, pcd, write_ascii=False)
 
-
 def print_xyz_distribution(name, pc_xyz):
     if pc_xyz.shape[0] == 0:
         print(f"{name}: EMPTY")
@@ -197,3 +196,4 @@ for camera in ["third_person_pc", "wrist_pc"]:
         print(f"  Saved → {out_folder}/")
 
 print("\n✔ Done. All filtered clouds saved in ./filtered-pc/")
+    
