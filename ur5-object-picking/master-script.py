@@ -425,7 +425,19 @@ def move_and_grab_cube(robot, tray_pos, base_save_dir="dataset"):
         state_history = []  # Store robot states for this iteration
 
         # Reset arm posture
-        target_joint_positions = [0, -1.57, 1.57, -1.5, -1.57, 0.0]
+        # target_joint_positions = [0, -1.57, 1.57, -1.5, -1.57, 0.0]
+        
+        target_joint_positions = [
+            random.uniform(-0.4, 0.4),      # shoulder_pan_joint: randomize ±0.3 rad from 0
+            random.uniform(-1.4, -1.6),     # shoulder_lift_joint: randomize around -1.57
+            random.uniform(1.4, 1.6),       # elbow_joint: randomize around 1.57
+            random.uniform(-1, -1.6),     # wrist_1_joint: randomize around -1.5
+            random.uniform(-1.4, -1.6),     # wrist_2_joint: randomize around -1.57
+            random.uniform(-0.3, 0.3)       # wrist_3_joint: randomize ±0.3 rad from 0
+        ]
+
+        print(f"Iteration {iteration}: Resetting arm to joint positions: {target_joint_positions}")
+        
         for i, joint_id in enumerate(robot.arm_controllable_joints):
             p.setJointMotorControl2(robot.id, joint_id, p.POSITION_CONTROL, target_joint_positions[i])
         update_simulation(200, capture_frames=False, iter_folder=iter_folder, 
@@ -479,19 +491,15 @@ def move_and_grab_cube(robot, tray_pos, base_save_dir="dataset"):
                          frame_counter=frame_counter, robot=robot, base_pos=robot.base_pos,
                          state_history=state_history)
         
-        # Remove cube
         p.removeBody(cube_id)
 
         # ============ SAVE AGENT STATES AND ACTIONS ============
-        # Convert state history to numpy array
         agent_pos = np.array(state_history)  # Shape: (T, 13)
         
-        # Compute actions as differences between consecutive states
         actions = np.diff(agent_pos, axis=0)  # Shape: (T-1, 13)
-        # Pad with zeros for the last timestep to match length
+
         actions = np.vstack([actions, np.zeros(13)])  # Shape: (T, 13)
-        
-        # Save to file
+
         state_action_data = {
             'agent_pos': agent_pos.tolist(),  # Robot states (T, 13)
             'action': actions.tolist(),        # Actions as state differences (T, 13)
