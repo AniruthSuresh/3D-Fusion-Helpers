@@ -1,7 +1,9 @@
 import open3d as o3d
 
 # Path to your .ply file
-ply_path = "./dataset/iter_0000/wrist/pcd/wr_pcd_0150.ply"
+# ply_path = "./dataset/iter_0000/third_person/pcd/tp_pcd_world_0004.ply"
+# ply_path = "./dataset/iter_0000/wrist/pcd/wr_pcd_world_0004.ply"
+ply_path = "../sim-data-converting/processed-sim-data/wrist_pc/iter_0000/cloud_00100.ply"
 
 # Load point cloud
 pcd = o3d.io.read_point_cloud(ply_path)
@@ -11,3 +13,4 @@ print(pcd)
 
 # Visualize
 o3d.visualization.draw_geometries([pcd])
+
