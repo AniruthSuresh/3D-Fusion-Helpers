@@ -66,17 +66,44 @@ class UR5Robotiq85:
                                    parentFramePosition=[0, 0, 0], childFramePosition=[0, 0, 0])
             p.changeConstraint(c, gearRatio=-multiplier, maxForce=100, erp=1)
 
-    def move_arm_ik(self, target_pos, target_orn):
+    def move_arm_ik(self, target_pos, target_orn, fix_wrist=False, wrist_angles=None):
+        """
+        Move arm using IK solver.
+        
+        Args:
+            target_pos: Target end-effector position
+            target_orn: Target end-effector orientation
+            fix_wrist: If True, use IK solution for first 3 joints and fixed values for wrist joints
+            wrist_angles: Fixed angles for wrist joints [wrist_1, wrist_2, wrist_3]. 
+                         Defaults to [-1.5, -1.57, 0.0] if fix_wrist=True
+        """
+        # Always compute full IK solution
         joint_poses = p.calculateInverseKinematics(
             self.id, self.eef_id, target_pos, target_orn,
             lowerLimits=self.arm_lower_limits,
             upperLimits=self.arm_upper_limits,
             jointRanges=self.arm_joint_ranges,
             restPoses=self.arm_rest_poses,
+            maxNumIterations=1000
         )
+        
+        # If fixing wrist, override joints 3-5 with fixed angles
+        if fix_wrist:
+            if wrist_angles is None:
+                wrist_angles = [-1.5, -1.57, 0.0]
+                            # 
+            # Use IK solution for first 3 joints (0, 1, 2)
+            # Use fixed angles for wrist joints (3, 4, 5)
+            joint_poses = list(joint_poses)
+            joint_poses[3] = wrist_angles[0]  # wrist_1
+            joint_poses[4] = wrist_angles[1]  # wrist_2
+            joint_poses[5] = wrist_angles[2]  # wrist_3
+        
+        # Apply to all 6 arm joints
         for i, joint_id in enumerate(self.arm_controllable_joints):
             p.setJointMotorControl2(self.id, joint_id, p.POSITION_CONTROL, joint_poses[i], maxVelocity=self.max_velocity)
-
+        
+        
     def move_gripper(self, open_length):
         open_length = max(self.gripper_range[0], min(open_length, self.gripper_range[1]))
         open_angle = 0.715 - math.asin((open_length - 0.010) / 0.1143)
@@ -88,32 +115,19 @@ class UR5Robotiq85:
     
     def get_robot_state(self):
         """Get complete robot state: end-effector pose + joint angles"""
-        # Get end-effector state
         eef_state = p.getLinkState(self.id, self.eef_id)
         eef_pos = np.array(eef_state[0]) 
         eef_orn_quat = np.array(eef_state[1])  
-        
-        
         eef_orn_euler = np.array(p.getEulerFromQuaternion(eef_orn_quat))  
         
         joint_states = []
         for joint_id in self.arm_controllable_joints:
             joint_state = p.getJointState(self.id, joint_id)
-            joint_states.append(joint_state[0])  # Joint position
-        """
-        IMPORTANT : mimic_parent_name = 'finger_joint'
-        This is the mimic_parent_id that controls the main gripper opening/closing. 
-        In the code, this is set up in the __setup_mimic_joints__ method:So the gripper state saved in state[12] is the angle of joint ID 9 (finger_joint), 
-        which ranges from 0.0 (closed) to 0.8 (open).
-        The other gripper joints (IDs 11, 13, 14, 16, 18) are mimic joints that follow this parent 
-        joint automatically through the gear constraints, so we only need to track this one joint to represent the full gripper state.
-        """
-        # Get gripper state
+            joint_states.append(joint_state[0])
+        
         gripper_state = p.getJointState(self.id, self.mimic_parent_id)
         gripper_angle = gripper_state[0]
         
-        # Combine into single state vector
-        # [eef_pos (3), eef_orn_euler (3), arm_joints (6), gripper (1)] = 13 dimensions
         state = np.concatenate([
             eef_pos,           # 3D position (x, y, z)
             eef_orn_euler,     # 3D euler angles (roll, pitch, yaw)
@@ -342,7 +356,6 @@ def update_simulation(steps, sleep_time=0.01, capture_frames=False, iter_folder=
             )
             
             # ============ SAVE CAMERA POSES ============
-            # Calculate pose relative to robot base
             base_pos_array = np.array(base_pos)
             
             # Third-person camera extrinsics (constant, relative to base)
@@ -415,6 +428,34 @@ def random_color_cube(cube_id):
     color = [random.random(), random.random(), random.random(), 1.0]
     p.changeVisualShape(cube_id, -1, rgbaColor=color)
 
+def get_random_workspace_position(workspace_bounds=None):
+    """
+    Generate a random valid position within the robot's workspace.
+    
+    Args:
+        workspace_bounds: Dict with 'x', 'y', 'z' ranges. If None, uses default safe bounds.
+    
+    Returns:
+        tuple: (position, orientation) for end-effector
+    """
+    if workspace_bounds is None:
+        workspace_bounds = {
+            'x': (0.2, 0.7),   # Forward reach
+            'y': (-0.3, 0.3),  # Left-right
+            'z': (1, 1.1)   # Height above table
+        }
+    
+    random_pos = [
+        random.uniform(*workspace_bounds['x']),
+        random.uniform(*workspace_bounds['y']),
+        random.uniform(*workspace_bounds['z'])
+    ]
+    
+    random_orn = p.getQuaternionFromEuler([0, math.pi, 0])
+    
+    return random_pos, random_orn
+
+
 def move_and_grab_cube(robot, tray_pos, base_save_dir="dataset"):
     iteration = 0
     while True:
@@ -422,70 +463,60 @@ def move_and_grab_cube(robot, tray_pos, base_save_dir="dataset"):
         os.makedirs(iter_folder, exist_ok=True)
 
         frame_counter = [0]
-        state_history = []  # Store robot states for this iteration
+        state_history = [] 
 
-        # Reset arm posture
+        # Reset to random workspace position with fixed wrist
+        random_pos, random_orn = get_random_workspace_position()
+        
+        print(f"Iteration {iteration}: Moving to random workspace position: {random_pos}")
+        
+        # Use IK for first 3 joints only, keep wrist fixed
         # target_joint_positions = [0, -1.57, 1.57, -1.5, -1.57, 0.0]
+        robot.move_arm_ik(random_pos, random_orn, fix_wrist=True, wrist_angles=[-1.5, -1.57, 0.0])
         
-        target_joint_positions = [
-            random.uniform(-0.4, 0.4),      # shoulder_pan_joint: randomize ±0.3 rad from 0
-            random.uniform(-1.4, -1.6),     # shoulder_lift_joint: randomize around -1.57
-            random.uniform(1.4, 1.6),       # elbow_joint: randomize around 1.57
-            random.uniform(-1, -1.6),     # wrist_1_joint: randomize around -1.5
-            random.uniform(-1.4, -1.6),     # wrist_2_joint: randomize around -1.57
-            random.uniform(-0.3, 0.3)       # wrist_3_joint: randomize ±0.3 rad from 0
-        ]
-
-        print(f"Iteration {iteration}: Resetting arm to joint positions: {target_joint_positions}")
+        robot.move_gripper(0.085)
         
-        for i, joint_id in enumerate(robot.arm_controllable_joints):
-            p.setJointMotorControl2(robot.id, joint_id, p.POSITION_CONTROL, target_joint_positions[i])
+        # Allow time for arm to reach position
         update_simulation(200, capture_frames=False, iter_folder=iter_folder, 
                          frame_counter=frame_counter, robot=robot, base_pos=robot.base_pos,
                          state_history=state_history)
 
-        # Random cube
+        # Rest of the function remains the same...
         cube_start_pos = [random.uniform(0.3, 0.7), random.uniform(-0.1, 0.1), 0.65]
         cube_start_orn = p.getQuaternionFromEuler([0, 0, 0])
         cube_id = p.loadURDF("cube_small.urdf", cube_start_pos, cube_start_orn)
         random_color_cube(cube_id)
 
-        # Get end-effector orientation
         eef_state = robot.get_current_ee_position()
         eef_orientation = eef_state[1]
 
-        # Move above cube
+        # Continue with normal IK for the rest of the motion
         robot.move_arm_ik([cube_start_pos[0], cube_start_pos[1], 0.83], eef_orientation)
-        update_simulation(50, capture_frames=True, iter_folder=iter_folder, 
+        update_simulation(100, capture_frames=True, iter_folder=iter_folder, 
                          frame_counter=frame_counter, robot=robot, base_pos=robot.base_pos,
                          state_history=state_history)
         
-        # Move down
         robot.move_arm_ik([cube_start_pos[0], cube_start_pos[1], 0.78], eef_orientation)
         update_simulation(50, capture_frames=True, iter_folder=iter_folder, 
                          frame_counter=frame_counter, robot=robot, base_pos=robot.base_pos,
                          state_history=state_history)
         
-        # Close gripper
         robot.move_gripper(0.01)
         update_simulation(25, capture_frames=True, iter_folder=iter_folder, 
                          frame_counter=frame_counter, robot=robot, base_pos=robot.base_pos,
                          state_history=state_history)
         
-        # Lift cube
         robot.move_arm_ik([cube_start_pos[0], cube_start_pos[1], 1.18], eef_orientation)
         update_simulation(50, capture_frames=True, iter_folder=iter_folder, 
                          frame_counter=frame_counter, robot=robot, base_pos=robot.base_pos,
                          state_history=state_history)
         
-        # Move above tray
         tray_offset = random.uniform(0.1, 0.3)
         robot.move_arm_ik([tray_pos[0]+tray_offset, tray_pos[1]+tray_offset, tray_pos[2]+0.56], eef_orientation)
         update_simulation(150, capture_frames=True, iter_folder=iter_folder, 
                          frame_counter=frame_counter, robot=robot, base_pos=robot.base_pos,
                          state_history=state_history)
         
-        # Open gripper
         robot.move_gripper(0.085)
         update_simulation(25, capture_frames=True, iter_folder=iter_folder, 
                          frame_counter=frame_counter, robot=robot, base_pos=robot.base_pos,
@@ -493,23 +524,22 @@ def move_and_grab_cube(robot, tray_pos, base_save_dir="dataset"):
         
         p.removeBody(cube_id)
 
-        # ============ SAVE AGENT STATES AND ACTIONS ============
-        agent_pos = np.array(state_history)  # Shape: (T, 13)
-        
-        actions = np.diff(agent_pos, axis=0)  # Shape: (T-1, 13)
-
-        actions = np.vstack([actions, np.zeros(13)])  # Shape: (T, 13)
+        # Save states and actions
+        agent_pos = np.array(state_history)
+        actions = np.diff(agent_pos, axis=0)
+        actions = np.vstack([actions, np.zeros(13)])
 
         state_action_data = {
-            'agent_pos': agent_pos.tolist(),  # Robot states (T, 13)
-            'action': actions.tolist(),        # Actions as state differences (T, 13)
+            'agent_pos': agent_pos.tolist(),
+            'action': actions.tolist(),
             'num_frames': len(agent_pos),
             'state_dim': 13,
+            'initial_workspace_pos': random_pos,
             'state_description': {
-                'eef_pos': [0, 1, 2],                    # End-effector position (x, y, z)
-                'eef_orn': [3, 4, 5],                    # End-effector orientation (roll, pitch, yaw)
-                'arm_joints': [6, 7, 8, 9, 10, 11],      # 6 arm joint angles
-                'gripper': [12]                          # Gripper angle
+                'eef_pos': [0, 1, 2],
+                'eef_orn': [3, 4, 5],
+                'arm_joints': [6, 7, 8, 9, 10, 11],
+                'gripper': [12]
             }
         }
         
@@ -517,11 +547,9 @@ def move_and_grab_cube(robot, tray_pos, base_save_dir="dataset"):
         with open(state_action_file, 'w') as f:
             json.dump(state_action_data, f, indent=2)
         
-        # Save as numpy arrays
         np.save(os.path.join(iter_folder, "agent_pos.npy"), agent_pos)
         np.save(os.path.join(iter_folder, "actions.npy"), actions)
         
-        # Save as text files
         np.savetxt(os.path.join(iter_folder, "agent_pos.txt"), agent_pos, 
                    fmt='%.6f', delimiter=' ',
                    header='End-effector pose (x,y,z,roll,pitch,yaw) + 6 joint angles + gripper angle (13 dimensions)')
@@ -529,12 +557,12 @@ def move_and_grab_cube(robot, tray_pos, base_save_dir="dataset"):
                    fmt='%.6f', delimiter=' ',
                    header='Action deltas: differences between consecutive states (13 dimensions)')
 
-
         print(f"Completed iteration {iteration} - {frame_counter[0]} frames captured")
+        print(f"  Initial position: {random_pos}")
         print(f"  Agent states shape: {agent_pos.shape}")
         print(f"  Actions shape: {actions.shape}")
         iteration += 1
-
+        
 def main():
     tray_pos, tray_orn = setup_simulation()
     robot = UR5Robotiq85([0, 0, 0.62], [0, 0, 0])
