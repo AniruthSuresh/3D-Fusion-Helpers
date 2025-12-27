@@ -306,7 +306,14 @@ def update_simulation(steps, sleep_time=0.01, capture_frames=False, iter_folder=
                 os.path.join(dirs['tp_pcd'], f"tp_pcd_{frame_counter[0]:04d}.npy"),
                 point_cloud_tp
             )
-            
+
+            # Flatten RGB and point cloud
+            colors_tp = rgb_tp.reshape(-1, 3)
+            points_tp = point_cloud_tp.reshape(-1, 3)
+            ply_path_tp = os.path.join(dirs['tp_pcd'], f"tp_pcd_{frame_counter[0]:04d}.ply")
+            save_point_cloud_ply(points_tp, colors_tp, ply_path_tp)
+
+
             # ============ WRIST CAMERA ============
             wr_cam_pos, wr_cam_target, wr_cam_up = get_wrist_camera_params(robot)
             
@@ -340,7 +347,14 @@ def update_simulation(steps, sleep_time=0.01, capture_frames=False, iter_folder=
                 os.path.join(dirs['wr_pcd'], f"wr_pcd_{frame_counter[0]:04d}.npy"),
                 point_cloud_wr
             )
-            
+    
+
+            colors_wr = rgb_wr.reshape(-1, 3)
+            points_wr = point_cloud_wr.reshape(-1, 3)
+            ply_path_wr = os.path.join(dirs['wr_pcd'], f"wr_pcd_{frame_counter[0]:04d}.ply")
+            save_point_cloud_ply(points_wr, colors_wr, ply_path_wr)
+
+
             # ============ SAVE CAMERA POSES ============
             # Calculate pose relative to robot base
             base_pos_array = np.array(base_pos)
