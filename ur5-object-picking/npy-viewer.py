@@ -2,7 +2,7 @@ import numpy as np
 import open3d as o3d
 
 # Path to .npy point cloud
-npy_path = "./dataset/iter_0000/third_person/pcd/tp_pcd_world_0004.npy"
+npy_path = "./dataset/iter_0000/third_person/depth/tp_depth_0004.npy"
 
 # Load numpy array (N, 3)
 points = np.load(npy_path)
