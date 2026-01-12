@@ -259,7 +259,8 @@ def compute_extrinsics(cam_pos, cam_target, cam_up):
     }
 
 def update_simulation(steps, sleep_time=0.01, capture_frames=False, iter_folder=None, 
-                     frame_counter=None, robot=None, base_pos=None, state_history=None):
+                     frame_counter=None, robot=None, base_pos=None, state_history=None,
+                     cube_id=None, cube_pos_history=None):
     """Update simulation and optionally capture frames from both cameras"""
     
     if capture_frames:
@@ -390,6 +391,16 @@ def update_simulation(steps, sleep_time=0.01, capture_frames=False, iter_folder=
             if state_history is not None:
                 state_history.append(current_state)
             
+            # ============ SAVE CUBE POSITION ============
+            if cube_id is not None and cube_pos_history is not None:
+                cube_pos, cube_orn = p.getBasePositionAndOrientation(cube_id)
+                # Store position and orientation (quaternion)
+                cube_state = np.concatenate([
+                    np.array(cube_pos),      # 3D position (x, y, z)
+                    np.array(cube_orn)       # 4D quaternion (x, y, z, w)
+                ])
+                cube_pos_history.append(cube_state)
+            
             frame_counter[0] += 1
 
 def save_point_cloud_ply(points, colors, filename):
@@ -437,6 +448,7 @@ def move_and_grab_cube(robot, tray_pos, base_save_dir="dataset"):
 
         frame_counter = [0]
         state_history = []  # Store robot states for this iteration
+        cube_pos_history = []  # Store cube positions for this iteration
 
         # Reset arm posture
         target_joint_positions = [0, -1.57, 1.57, -1.5, -1.57, 0.0]
@@ -460,38 +472,44 @@ def move_and_grab_cube(robot, tray_pos, base_save_dir="dataset"):
         robot.move_arm_ik([cube_start_pos[0], cube_start_pos[1], 0.83], eef_orientation)
         update_simulation(50, capture_frames=True, iter_folder=iter_folder, 
                          frame_counter=frame_counter, robot=robot, base_pos=robot.base_pos,
-                         state_history=state_history)
+                         state_history=state_history, cube_id=cube_id, 
+                         cube_pos_history=cube_pos_history)
         
         # Move down
         robot.move_arm_ik([cube_start_pos[0], cube_start_pos[1], 0.78], eef_orientation)
         update_simulation(50, capture_frames=True, iter_folder=iter_folder, 
                          frame_counter=frame_counter, robot=robot, base_pos=robot.base_pos,
-                         state_history=state_history)
+                         state_history=state_history, cube_id=cube_id,
+                         cube_pos_history=cube_pos_history)
         
         # Close gripper
         robot.move_gripper(0.01)
         update_simulation(25, capture_frames=True, iter_folder=iter_folder, 
                          frame_counter=frame_counter, robot=robot, base_pos=robot.base_pos,
-                         state_history=state_history)
+                         state_history=state_history, cube_id=cube_id,
+                         cube_pos_history=cube_pos_history)
         
         # Lift cube
         robot.move_arm_ik([cube_start_pos[0], cube_start_pos[1], 1.18], eef_orientation)
         update_simulation(50, capture_frames=True, iter_folder=iter_folder, 
                          frame_counter=frame_counter, robot=robot, base_pos=robot.base_pos,
-                         state_history=state_history)
+                         state_history=state_history, cube_id=cube_id,
+                         cube_pos_history=cube_pos_history)
         
         # Move above tray
         tray_offset = random.uniform(0.1, 0.3)
         robot.move_arm_ik([tray_pos[0]+tray_offset, tray_pos[1]+tray_offset, tray_pos[2]+0.56], eef_orientation)
         update_simulation(150, capture_frames=True, iter_folder=iter_folder, 
                          frame_counter=frame_counter, robot=robot, base_pos=robot.base_pos,
-                         state_history=state_history)
+                         state_history=state_history, cube_id=cube_id,
+                         cube_pos_history=cube_pos_history)
         
         # Open gripper
         robot.move_gripper(0.085)
         update_simulation(25, capture_frames=True, iter_folder=iter_folder, 
                          frame_counter=frame_counter, robot=robot, base_pos=robot.base_pos,
-                         state_history=state_history)
+                         state_history=state_history, cube_id=cube_id,
+                         cube_pos_history=cube_pos_history)
         
         # Remove cube
         p.removeBody(cube_id)
@@ -505,17 +523,26 @@ def move_and_grab_cube(robot, tray_pos, base_save_dir="dataset"):
         # Pad with zeros for the last timestep to match length
         actions = np.vstack([actions, np.zeros(13)])  # Shape: (T, 13)
         
+        # Convert cube position history to numpy array
+        cube_positions = np.array(cube_pos_history)  # Shape: (T, 7) - 3 pos + 4 quat
+        
         # Save to file
         state_action_data = {
             'agent_pos': agent_pos.tolist(),  # Robot states (T, 13)
             'action': actions.tolist(),        # Actions as state differences (T, 13)
+            'cube_pos': cube_positions.tolist(),  # Cube positifons (T, 7)
             'num_frames': len(agent_pos),
             'state_dim': 13,
+            'cube_dim': 7,
             'state_description': {
                 'eef_pos': [0, 1, 2],                    # End-effector position (x, y, z)
                 'eef_orn': [3, 4, 5],                    # End-effector orientation (roll, pitch, yaw)
                 'arm_joints': [6, 7, 8, 9, 10, 11],      # 6 arm joint angles
                 'gripper': [12]                          # Gripper angle
+            },
+            'cube_description': {
+                'position': [0, 1, 2],                   # Cube position (x, y, z)
+                'orientation': [3, 4, 5, 6]              # Cube orientation quaternion (x, y, z, w)
             }
         }
         
@@ -526,6 +553,7 @@ def move_and_grab_cube(robot, tray_pos, base_save_dir="dataset"):
         # Save as numpy arrays
         np.save(os.path.join(iter_folder, "agent_pos.npy"), agent_pos)
         np.save(os.path.join(iter_folder, "actions.npy"), actions)
+        np.save(os.path.join(iter_folder, "cube_pos.npy"), cube_positions)
         
         # Save as text files
         np.savetxt(os.path.join(iter_folder, "agent_pos.txt"), agent_pos, 
@@ -534,11 +562,15 @@ def move_and_grab_cube(robot, tray_pos, base_save_dir="dataset"):
         np.savetxt(os.path.join(iter_folder, "actions.txt"), actions, 
                    fmt='%.6f', delimiter=' ',
                    header='Action deltas: differences between consecutive states (13 dimensions)')
+        np.savetxt(os.path.join(iter_folder, "cube_pos.txt"), cube_positions,
+                   fmt='%.6f', delimiter=' ',
+                   header='Cube position (x,y,z) + orientation quaternion (x,y,z,w) (7 dimensions)')
 
 
         print(f"Completed iteration {iteration} - {frame_counter[0]} frames captured")
         print(f"  Agent states shape: {agent_pos.shape}")
         print(f"  Actions shape: {actions.shape}")
+        print(f"  Cube positions shape: {cube_positions.shape}")
         iteration += 1
 
 def main():

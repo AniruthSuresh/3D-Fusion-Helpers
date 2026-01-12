@@ -9,8 +9,8 @@ from shutil import copy2
 # -------------------------
 # CONFIG
 # -------------------------
-DATA_ROOT = "./dataset"  # Input: simulation dataset
-OUTPUT_ROOT = "./processed-sim-data"          # Output: processed data
+DATA_ROOT = "../ur5-object-picking/dataset/"  # Input: simulation dataset
+OUTPUT_ROOT = "./processed-sim-data-new"          # Output: processed data
 
 # State/Action dimensions for UR5 sim data
 STATE_DIM = 13  # [eef_pos(3), eef_orn(3), joints(6), gripper(1)]
