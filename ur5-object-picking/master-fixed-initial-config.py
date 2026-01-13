@@ -260,7 +260,7 @@ def compute_extrinsics(cam_pos, cam_target, cam_up):
 
 def update_simulation(steps, sleep_time=0.01, capture_frames=False, iter_folder=None, 
                      frame_counter=None, robot=None, base_pos=None, state_history=None,
-                     cube_id=None, cube_pos_history=None):
+                     cube_id=None, cube_pos_history=None, table_id=None, capture_table=False):
     """Update simulation and optionally capture frames from both cameras"""
     
     if capture_frames:
@@ -270,6 +270,15 @@ def update_simulation(steps, sleep_time=0.01, capture_frames=False, iter_folder=
     tp_cam_eye = [1.1, -0.6, 1.3]
     tp_cam_target = [0.5, 0.3, 0.7]
     tp_cam_up = [0, 0, 1]
+    
+    # Hide/show table during capture
+    if table_id is not None and capture_frames:
+        if capture_table:
+            # Show table
+            p.changeVisualShape(table_id, -1, rgbaColor=[1, 1, 1, 1])
+        else:
+            # Hide table by making it fully transparent
+            p.changeVisualShape(table_id, -1, rgbaColor=[1, 1, 1, 0])
     
     for _ in range(steps):
         p.stepSimulation()
@@ -402,6 +411,10 @@ def update_simulation(steps, sleep_time=0.01, capture_frames=False, iter_folder=
                 cube_pos_history.append(cube_state)
             
             frame_counter[0] += 1
+    
+    # Restore table visibility after capture
+    if table_id is not None and capture_frames:
+        p.changeVisualShape(table_id, -1, rgbaColor=[1, 1, 1, 1])
 
 def save_point_cloud_ply(points, colors, filename):
     """Save point cloud in PLY format with colors"""
@@ -425,22 +438,23 @@ def save_point_cloud_ply(points, colors, filename):
             f.write(f"{point[0]:.6f} {point[1]:.6f} {point[2]:.6f} ")
             f.write(f"{int(color[0])} {int(color[1])} {int(color[2])}\n")
 
-def setup_simulation():
+def setup_simulation(capture_table=False):
     p.connect(p.GUI)
     p.setGravity(0, 0, -9.8)
     p.setAdditionalSearchPath(pybullet_data.getDataPath())
-    p.loadURDF("plane.urdf")
-    p.loadURDF("table/table.urdf", [0.5, 0, 0], p.getQuaternionFromEuler([0, 0, 0]))
+    if capture_table:
+        p.loadURDF("plane.urdf", [0, 0, 0], useMaximalCoordinates=True)
+    table_id = p.loadURDF("table/table.urdf", [0.5, 0, 0], p.getQuaternionFromEuler([0, 0, 0]))
     tray_pos = [0.5, 0.9, 0.6]
     tray_orn = p.getQuaternionFromEuler([0, 0, 0])
     p.loadURDF("tray/tray.urdf", tray_pos, tray_orn)
-    return tray_pos, tray_orn
+    return tray_pos, tray_orn, table_id
 
 def random_color_cube(cube_id):
     color = [random.random(), random.random(), random.random(), 1.0]
     p.changeVisualShape(cube_id, -1, rgbaColor=color)
 
-def move_and_grab_cube(robot, tray_pos, base_save_dir="dataset"):
+def move_and_grab_cube(robot, tray_pos, table_id, base_save_dir="dataset", capture_table=False):
     iteration = 0
     while True:
         iter_folder = os.path.join(base_save_dir, f"iter_{iteration:04d}")
@@ -456,7 +470,7 @@ def move_and_grab_cube(robot, tray_pos, base_save_dir="dataset"):
             p.setJointMotorControl2(robot.id, joint_id, p.POSITION_CONTROL, target_joint_positions[i])
         update_simulation(200, capture_frames=False, iter_folder=iter_folder, 
                          frame_counter=frame_counter, robot=robot, base_pos=robot.base_pos,
-                         state_history=state_history)
+                         state_history=state_history, table_id=table_id, capture_table=capture_table)
 
         # Random cube
         cube_start_pos = [random.uniform(0.3, 0.7), random.uniform(-0.1, 0.1), 0.65]
@@ -473,28 +487,28 @@ def move_and_grab_cube(robot, tray_pos, base_save_dir="dataset"):
         update_simulation(50, capture_frames=True, iter_folder=iter_folder, 
                          frame_counter=frame_counter, robot=robot, base_pos=robot.base_pos,
                          state_history=state_history, cube_id=cube_id, 
-                         cube_pos_history=cube_pos_history)
+                         cube_pos_history=cube_pos_history, table_id=table_id, capture_table=capture_table)
         
         # Move down
         robot.move_arm_ik([cube_start_pos[0], cube_start_pos[1], 0.78], eef_orientation)
         update_simulation(50, capture_frames=True, iter_folder=iter_folder, 
                          frame_counter=frame_counter, robot=robot, base_pos=robot.base_pos,
                          state_history=state_history, cube_id=cube_id,
-                         cube_pos_history=cube_pos_history)
+                         cube_pos_history=cube_pos_history, table_id=table_id, capture_table=capture_table)
         
         # Close gripper
         robot.move_gripper(0.01)
         update_simulation(25, capture_frames=True, iter_folder=iter_folder, 
                          frame_counter=frame_counter, robot=robot, base_pos=robot.base_pos,
                          state_history=state_history, cube_id=cube_id,
-                         cube_pos_history=cube_pos_history)
+                         cube_pos_history=cube_pos_history, table_id=table_id, capture_table=capture_table)
         
         # Lift cube
         robot.move_arm_ik([cube_start_pos[0], cube_start_pos[1], 1.18], eef_orientation)
         update_simulation(50, capture_frames=True, iter_folder=iter_folder, 
                          frame_counter=frame_counter, robot=robot, base_pos=robot.base_pos,
                          state_history=state_history, cube_id=cube_id,
-                         cube_pos_history=cube_pos_history)
+                         cube_pos_history=cube_pos_history, table_id=table_id, capture_table=capture_table)
         
         # Move above tray
         tray_offset = random.uniform(0.1, 0.3)
@@ -502,14 +516,14 @@ def move_and_grab_cube(robot, tray_pos, base_save_dir="dataset"):
         update_simulation(150, capture_frames=True, iter_folder=iter_folder, 
                          frame_counter=frame_counter, robot=robot, base_pos=robot.base_pos,
                          state_history=state_history, cube_id=cube_id,
-                         cube_pos_history=cube_pos_history)
+                         cube_pos_history=cube_pos_history, table_id=table_id, capture_table=capture_table)
         
         # Open gripper
         robot.move_gripper(0.085)
         update_simulation(25, capture_frames=True, iter_folder=iter_folder, 
                          frame_counter=frame_counter, robot=robot, base_pos=robot.base_pos,
                          state_history=state_history, cube_id=cube_id,
-                         cube_pos_history=cube_pos_history)
+                         cube_pos_history=cube_pos_history, table_id=table_id, capture_table=capture_table)
         
         # Remove cube
         p.removeBody(cube_id)
@@ -530,7 +544,7 @@ def move_and_grab_cube(robot, tray_pos, base_save_dir="dataset"):
         state_action_data = {
             'agent_pos': agent_pos.tolist(),  # Robot states (T, 13)
             'action': actions.tolist(),        # Actions as state differences (T, 13)
-            'cube_pos': cube_positions.tolist(),  # Cube positifons (T, 7)
+            'cube_pos': cube_positions.tolist(),  # Cube positions (T, 7)
             'num_frames': len(agent_pos),
             'state_dim': 13,
             'cube_dim': 7,
@@ -574,10 +588,13 @@ def move_and_grab_cube(robot, tray_pos, base_save_dir="dataset"):
         iteration += 1
 
 def main():
-    tray_pos, tray_orn = setup_simulation()
+    CAPTURE_TABLE = False  # Set to True to capture table in data
+    tray_pos, tray_orn, table_id = setup_simulation(CAPTURE_TABLE)
     robot = UR5Robotiq85([0, 0, 0.62], [0, 0, 0])
     robot.load()
-    move_and_grab_cube(robot, tray_pos)
+    # Set capture_table=False to hide table during data capture (default)
+    # Set capture_table=True to show table during data capture
+    move_and_grab_cube(robot, tray_pos, table_id, capture_table=CAPTURE_TABLE)
 
 if __name__ == "__main__":
     main()
