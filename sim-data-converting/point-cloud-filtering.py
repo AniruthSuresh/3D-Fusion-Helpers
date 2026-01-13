@@ -81,8 +81,8 @@ def process_point_cloud(pc_xyz, pc_rgb, visualize=True):
         print(" Empty after crop — skipping FPS")
         return pc_xyz, pc_rgb
 
-    num_fps = min(2500, pc_xyz.shape[0])
-    pc_xyz_fps, idx = farthest_point_sampling(pc_xyz, num_points=num_fps)
+    num_fps = min(6000, pc_xyz.shape[0])
+    pc_xyz_fps, idx = farthest_point_sampling(pc_xyz, num_points=6000)
     pc_rgb_fps = pc_rgb[idx]
 
     print(f" → After FPS: {pc_xyz_fps.shape[0]} points")
@@ -135,7 +135,7 @@ def print_xyz_distribution(name, pc_xyz):
 # ---------------------------
 # MAIN BATCH PROCESSOR
 # ---------------------------
-INPUT_ROOT = "./processed-sim-data/"
+INPUT_ROOT = "./processed-sim-data-new/"
 OUTPUT_ROOT = "./filtered-pc"
 
 os.makedirs(OUTPUT_ROOT, exist_ok=True)
@@ -196,4 +196,3 @@ for camera in ["third_person_pc", "wrist_pc"]:
         print(f"  Saved → {out_folder}/")
 
 print("\n✔ Done. All filtered clouds saved in ./filtered-pc/")
-    
