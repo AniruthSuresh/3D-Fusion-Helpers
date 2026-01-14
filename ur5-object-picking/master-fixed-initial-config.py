@@ -762,6 +762,9 @@ def move_and_grab_cube(
         print(f"  Cube positions shape: {cube_positions.shape}")
         iteration += 1
 
+        if(iteration >= 36):  # Limit to 1 iteration for testing
+            break
+
 
 def main():
     CAPTURE_TABLE = False  # Set to True to capture table in data
