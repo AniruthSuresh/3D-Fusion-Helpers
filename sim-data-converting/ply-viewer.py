@@ -4,13 +4,29 @@ import os
 
 
 # ---------- Workspace utils ----------
-def compute_workspace_bounds(pc_xyz, n_std=2):
-    WORK_SPACE = [
-        [0.6389609647247474, 4.405105314033407],  # X
-        [-1.562868614993293, -1.0280730580106126],  # Y
-        [1.2382057599132916, 2.6079001348631374],  # Z
+# def compute_workspace_bounds(pc_xyz, n_std=2):
+#     WORK_SPACE = [
+#         [0.6389609647247474, 4.405105314033407],  # X
+#         [-1.562868614993293, -1.0280730580106126],  # Y
+#         [1.2382057599132916, 2.6079001348631374],  # Z
+#     ]
+#     return WORK_SPACE
+#
+def compute_workspace_bounds(pc_xyz, n_std=10):
+    if pc_xyz.shape[0] == 0:
+        return None
+
+    mean = pc_xyz.mean(axis=0)
+    std = pc_xyz.std(axis=0)
+
+    workspace = [
+        [mean[0] - n_std * std[0], mean[0] + n_std * std[0]],  # X
+        [mean[1] - n_std * std[1], mean[1] + n_std * std[1]],  # Y
+        [mean[2] - n_std * std[2], mean[2] + n_std * std[2]],  # Z
     ]
-    return WORK_SPACE
+
+    print(f"Workspace bounds (mean ± {n_std}*std): {workspace}")
+    return workspace
 
 
 def crop_workspace(pc_xyz, workspace_bounds):
@@ -26,7 +42,7 @@ def crop_workspace(pc_xyz, workspace_bounds):
 
 
 # ---------- Load point cloud ----------
-PLY_PATH = "/home/varun-edachali/Research/RRC/policy/data/3D-Fusion-Helpers/sim-data-converting/tp_pcd_0010.ply"
+PLY_PATH = "/home/varun-edachali/Research/RRC/policy/data/3D-Fusion-Helpers/sim-data-converting/env_pc.ply"
 assert os.path.exists(PLY_PATH)
 
 pcd = o3d.io.read_point_cloud(PLY_PATH)
@@ -89,9 +105,18 @@ def create_workspace_box(bounds, color=[1, 0, 0]):
 
     # 12 edges of the box
     lines = [
-        [0, 1], [1, 2], [2, 3], [3, 0],  # bottom face
-        [4, 5], [5, 6], [6, 7], [7, 4],  # top face
-        [0, 4], [1, 5], [2, 6], [3, 7],  # vertical edges
+        [0, 1],
+        [1, 2],
+        [2, 3],
+        [3, 0],  # bottom face
+        [4, 5],
+        [5, 6],
+        [6, 7],
+        [7, 4],  # top face
+        [0, 4],
+        [1, 5],
+        [2, 6],
+        [3, 7],  # vertical edges
     ]
 
     line_set = o3d.geometry.LineSet()
