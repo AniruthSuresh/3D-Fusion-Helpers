@@ -158,7 +158,7 @@ class UR5Robotiq85:
 
         gripper_state = p.getJointState(self.id, self.mimic_parent_id)
         gripper_angle = gripper_state[0]
-        print(f"Gripper angle: {gripper_angle:.4f}")
+        # print(f"Gripper angle: {gripper_angle:.4f}")
 
         state = np.concatenate([eef_pos, eef_orn_euler, joint_states, [gripper_angle]])
         return state
@@ -287,6 +287,7 @@ def update_simulation(
     table_id=None,
     plane_id=None,
     tray_id=None,
+    EXCLUDE_TABLE = True,
 ):
     """Update simulation and capture frames with table segmentation"""
 
@@ -299,13 +300,13 @@ def update_simulation(
 
     # Create list of object IDs to exclude from point clouds
     exclude_ids = []
-    if table_id is not None:
+    if table_id is not None and EXCLUDE_TABLE:
         print("Excluding table from point clouds with {}".format(table_id))
         exclude_ids.append(table_id)
     if plane_id is not None:
         print("Excluding plane from point clouds with {}".format(plane_id))
         exclude_ids.append(plane_id)
-        
+
     # if tray_id is not None:
     #     print("Excluding tray from point clouds with {}".format(tray_id))
     #     exclude_ids.append(tray_id)
@@ -526,7 +527,7 @@ def random_color_cube(cube_id):
     p.changeVisualShape(cube_id, -1, rgbaColor=color)
 
 
-def move_and_grab_cube(robot, tray_pos, table_id, plane_id, tray_id, base_save_dir="dataset"):
+def move_and_grab_cube(robot, tray_pos, table_id, plane_id, tray_id, EXCLUDE_TABLE, base_save_dir="dataset"):
     iteration = 0
     while True:
         iter_folder = os.path.join(base_save_dir, f"iter_{iteration:04d}")
@@ -564,6 +565,7 @@ def move_and_grab_cube(robot, tray_pos, table_id, plane_id, tray_id, base_save_d
             table_id=table_id,
             plane_id=plane_id,
             tray_id=tray_id,
+            EXCLUDE_TABLE=EXCLUDE_TABLE,
         )
 
         # Random cube
@@ -586,6 +588,7 @@ def move_and_grab_cube(robot, tray_pos, table_id, plane_id, tray_id, base_save_d
             state_history=state_history, cube_id=cube_id,
             cube_pos_history=cube_pos_history, table_id=table_id,
             plane_id=plane_id, tray_id=tray_id,
+            EXCLUDE_TABLE=EXCLUDE_TABLE
         )
 
         # Move down
@@ -596,6 +599,7 @@ def move_and_grab_cube(robot, tray_pos, table_id, plane_id, tray_id, base_save_d
             state_history=state_history, cube_id=cube_id,
             cube_pos_history=cube_pos_history, table_id=table_id,
             plane_id=plane_id, tray_id=tray_id,
+            EXCLUDE_TABLE=EXCLUDE_TABLE
         )
 
         # Close gripper
@@ -606,6 +610,7 @@ def move_and_grab_cube(robot, tray_pos, table_id, plane_id, tray_id, base_save_d
             state_history=state_history, cube_id=cube_id,
             cube_pos_history=cube_pos_history, table_id=table_id,
             plane_id=plane_id, tray_id=tray_id,
+            EXCLUDE_TABLE=EXCLUDE_TABLE
         )
 
         # Lift cube
@@ -616,6 +621,7 @@ def move_and_grab_cube(robot, tray_pos, table_id, plane_id, tray_id, base_save_d
             state_history=state_history, cube_id=cube_id,
             cube_pos_history=cube_pos_history, table_id=table_id,
             plane_id=plane_id, tray_id=tray_id,
+            EXCLUDE_TABLE=EXCLUDE_TABLE
         )
 
         # Move above tray
@@ -630,6 +636,7 @@ def move_and_grab_cube(robot, tray_pos, table_id, plane_id, tray_id, base_save_d
             state_history=state_history, cube_id=cube_id,
             cube_pos_history=cube_pos_history, table_id=table_id,
             plane_id=plane_id, tray_id=tray_id,
+            EXCLUDE_TABLE=EXCLUDE_TABLE
         )
 
         # Open gripper
@@ -640,6 +647,7 @@ def move_and_grab_cube(robot, tray_pos, table_id, plane_id, tray_id, base_save_d
             state_history=state_history, cube_id=cube_id,
             cube_pos_history=cube_pos_history, table_id=table_id,
             plane_id=plane_id, tray_id=tray_id,
+            EXCLUDE_TABLE=EXCLUDE_TABLE
         )
 
         # Remove cube
@@ -713,12 +721,13 @@ def move_and_grab_cube(robot, tray_pos, table_id, plane_id, tray_id, base_save_d
 
 
 def main():
+    EXCLUDE_TABLE = False
     tray_pos, tray_orn, table_id, plane_id, tray_id = setup_simulation()
     robot = UR5Robotiq85([0, 0, 0.62], [0, 0, 0])
     robot.load()
     # Set capture_table=False to hide table during data capture (default)
     # Set capture_table=True to show table during data capture
-    move_and_grab_cube(robot, tray_pos, table_id, plane_id, tray_id)
+    move_and_grab_cube(robot, tray_pos, table_id, plane_id, tray_id , EXCLUDE_TABLE = EXCLUDE_TABLE)
 
 
 if __name__ == "__main__":
