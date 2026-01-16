@@ -168,6 +168,7 @@ class UR5Robotiq85:
         # Get gripper state
         gripper_state = p.getJointState(self.id, self.mimic_parent_id)
         gripper_angle = gripper_state[0]
+        print(f"Gripper angle: {gripper_angle:.4f}")
 
         # Combine into single state vector
         # [eef_pos (3), eef_orn_euler (3), arm_joints (6), gripper (1)] = 13 dimensions
@@ -567,6 +568,20 @@ def move_and_grab_cube(
             p.setJointMotorControl2(
                 robot.id, joint_id, p.POSITION_CONTROL, target_joint_positions[i]
             )
+        p.setJointMotorControl2(
+            robot.id, 
+            robot.mimic_parent_id,
+            p.POSITION_CONTROL,
+            targetPosition=0.0000,
+            force=200
+        )
+        
+            
+        # Step simulation to stabilize
+        for _ in range(5000):
+            p.stepSimulation()
+
+        
         update_simulation(
             200,
             capture_frames=False,
@@ -588,6 +603,10 @@ def move_and_grab_cube(
         # Get end-effector orientation
         eef_state = robot.get_current_ee_position()
         eef_orientation = eef_state[1]
+
+        actual_gripper = p.getJointState(robot.id, robot.mimic_parent_id)[0]
+        print(f"Reset complete - Gripper position: {actual_gripper:.4f} (should be ~0.8 for open)")
+
 
         # Move above cube
         robot.move_arm_ik([cube_start_pos[0], cube_start_pos[1], 0.83], eef_orientation)
