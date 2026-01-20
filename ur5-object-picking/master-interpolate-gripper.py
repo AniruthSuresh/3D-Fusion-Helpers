@@ -82,6 +82,7 @@ class UR5Robotiq85:
         ]
 
     def __setup_mimic_joints__(self):
+        """Setup mimic joints for Robotiq gripper"""
         mimic_parent_name = "finger_joint"
         mimic_children_names = {
             "right_outer_knuckle_joint": 1,
@@ -90,14 +91,20 @@ class UR5Robotiq85:
             "left_inner_finger_joint": -1,
             "right_inner_finger_joint": -1,
         }
+        
+        # Find parent joint ID
         self.mimic_parent_id = [
             joint.id for joint in self.joints if joint.name == mimic_parent_name
         ][0]
+        
+        # Store child joint info
         self.mimic_child_multiplier = {
             joint.id: mimic_children_names[joint.name]
             for joint in self.joints
             if joint.name in mimic_children_names
         }
+        
+        # Create constraints with MUCH stronger force
         for joint_id, multiplier in self.mimic_child_multiplier.items():
             c = p.createConstraint(
                 self.id,
@@ -109,9 +116,10 @@ class UR5Robotiq85:
                 parentFramePosition=[0, 0, 0],
                 childFramePosition=[0, 0, 0],
             )
-            p.changeConstraint(c, gearRatio=-multiplier, maxForce=100, erp=1)
+            # CRITICAL: High maxForce and erp=1 for stiff constraints
+            p.changeConstraint(c, gearRatio=-multiplier, maxForce=100000, erp=1)
 
-    def move_arm_ik(self, target_pos, target_orn ):
+    def move_arm_ik(self, target_pos, target_orn):
         joint_poses = p.calculateInverseKinematics(
             self.id,
             self.eef_id,
@@ -131,16 +139,40 @@ class UR5Robotiq85:
                 maxVelocity=self.max_velocity,
             )
 
-
-
-    def move_gripper(self, open_length):
-        open_length = max(
-            self.gripper_range[0], min(open_length, self.gripper_range[1])
-        )
-        open_angle = 0.715 - math.asin((open_length - 0.010) / 0.1143)
+    def move_gripper(self, open_angle):
+        """
+        Move gripper to target angle.
+        
+        Args:
+            open_angle: Target angle for finger_joint (0 = open, 0.8 = closed)
+        """
+        # Control the parent joint AND all mimic children explicitly
         p.setJointMotorControl2(
-            self.id, self.mimic_parent_id, p.POSITION_CONTROL, targetPosition=open_angle
+            self.id, 
+            self.mimic_parent_id, 
+            p.POSITION_CONTROL, 
+            targetPosition=open_angle,
+            force=500,
+            maxVelocity=1.0
         )
+        
+        # Also control mimic children to help stabilize
+        for joint_id, multiplier in self.mimic_child_multiplier.items():
+            target = open_angle * multiplier
+            p.setJointMotorControl2(
+                self.id,
+                joint_id,
+                p.POSITION_CONTROL,
+                targetPosition=target,
+                force=500,
+                maxVelocity=1.0
+            )
+        
+        # p.resetJointState(robot.id, robot.mimic_parent_id, interpolated_angle)
+
+        # for joint_id, multiplier in robot.mimic_child_multiplier.items():
+        #     p.resetJointState(robot.id, joint_id, interpolated_angle * multiplier)
+
 
     def get_current_ee_position(self):
         eef_state = p.getLinkState(self.id, self.eef_id)
@@ -160,49 +192,74 @@ class UR5Robotiq85:
 
         gripper_state = p.getJointState(self.id, self.mimic_parent_id)
         gripper_angle = gripper_state[0]
-        # print(f"Gripper angle: {gripper_angle:.4f}")
 
+        print(f"Gripper angle : {gripper_angle}")
         state = np.concatenate([eef_pos, eef_orn_euler, joint_states, [gripper_angle]])
         return state
+    
 
 
-def interpolate_gripper(robot, target_angle, steps=25, 
+def interpolate_gripper(robot, target_angle, steps=60, 
                         capture_frames=True, iter_folder=None,
                         frame_counter=None, base_pos=None,
                         state_history=None, cube_id=None,
                         cube_pos_history=None, table_id=None,
                         plane_id=None, tray_id=None, EXCLUDE_TABLE=True):
     """Smoothly interpolate gripper position over multiple steps"""
+    
     # Get current gripper position
     current_gripper_state = p.getJointState(robot.id, robot.mimic_parent_id)
     current_angle = current_gripper_state[0]
 
-    
-    target_angle = target_angle
+    print(f"\nInterpolating gripper from {current_angle:.4f} to {target_angle:.4f}")
 
     # Interpolate between current and target angle
     for i in range(steps):
         alpha = (i + 1) / steps  # Linear interpolation factor
         interpolated_angle = current_angle + alpha * (target_angle - current_angle)
         
-        print(f"\nStep {i+1}/{steps}: Setting gripper angle to {interpolated_angle:.4f}")
-        # Set gripper to interpolated position
+        print(f"Step {i+1}/{steps}: Target {interpolated_angle:.4f}", end=" -> ")
+        
+        # Control parent joint
         p.setJointMotorControl2(
             robot.id, 
             robot.mimic_parent_id, 
             p.POSITION_CONTROL, 
             targetPosition=interpolated_angle,
-            force=4000  # Add force to maintain position
+            force=500,
+            maxVelocity=1.0
         )
-    
+        
+  
+        # CRITICAL: Also control all mimic children joints explicitly
+        for joint_id, multiplier in robot.mimic_child_multiplier.items():
+            child_target = interpolated_angle * multiplier
+            p.setJointMotorControl2(
+                robot.id,
+                joint_id,
+                p.POSITION_CONTROL,
+                targetPosition=child_target,
+                force=500,
+                maxVelocity=1.0
+            )
+        # 
+        # Step simulation - use moderate number of steps
         for _ in range(500):
             p.stepSimulation()
+# 
+# 
+        # p.resetJointState(robot.id, robot.mimic_parent_id, interpolated_angle)
 
-        time.sleep(0.55)
+        # for joint_id, multiplier in robot.mimic_child_multiplier.items():
+        #     p.resetJointState(robot.id, joint_id, interpolated_angle * multiplier)
+    
+        # # Verify actual position
+        # actual_angle = p.getJointState(robot.id, robot.mimic_parent_id)[0]
 
-        # Update simulation for this step
+        # print(f"Actual {actual_angle:.4f}")
+
         update_simulation(
-            1,  # Single step per interpolation
+            1,
             capture_frames=capture_frames,
             iter_folder=iter_folder,
             frame_counter=frame_counter,
@@ -217,8 +274,9 @@ def interpolate_gripper(robot, target_angle, steps=25,
             EXCLUDE_TABLE=EXCLUDE_TABLE
         )
 
-        print("Gripper now at position: ", p.getJointState(robot.id, robot.mimic_parent_id)[0])
-
+    final_angle = p.getJointState(robot.id, robot.mimic_parent_id)[0]
+    print(f"Final gripper position: {final_angle:.4f} (target was {target_angle:.4f})")
+    print(f"Error: {abs(final_angle - target_angle):.4f}")
 
 
 
@@ -601,17 +659,30 @@ def move_and_grab_cube(robot, tray_pos, table_id, plane_id, tray_id, EXCLUDE_TAB
             p.setJointMotorControl2(
                 robot.id, joint_id, p.POSITION_CONTROL, target_joint_positions[i]
             )
-        p.setJointMotorControl2(
-            robot.id, 
-            robot.mimic_parent_id,
-            p.POSITION_CONTROL,
-            targetPosition=0.0000,
-            force=200
-        )
-        
+
+        # p.setJointMotorControl2(
+        #     robot.id,
+        #     robot.mimic_parent_id,
+        #     p.POSITION_CONTROL,
+        #     targetPosition=0.0000,
+        #     force=200,
+        # )
+
+        p.resetJointState(robot.id, robot.mimic_parent_id, 0)
+# 
+        for joint_id, multiplier in robot.mimic_child_multiplier.items():
+            p.resetJointState(robot.id, joint_id, 0)
+    # 
+        actual_angle = p.getJointState(robot.id, robot.mimic_parent_id)[0]
+    
+
+
         for _ in range(5000):
             p.stepSimulation()
 
+        print("\nStabilizing robot at rest pose...")
+
+        print(f"Gripper set to : {actual_angle}")
         update_simulation(
             200,
             capture_frames=False,
@@ -662,7 +733,7 @@ def move_and_grab_cube(robot, tray_pos, table_id, plane_id, tray_id, EXCLUDE_TAB
 
         # Close gripper smoothly
         interpolate_gripper(
-            robot, 0.01, steps=25,
+            robot, target_angle=0.45, steps=50,
             capture_frames=True, iter_folder=iter_folder,
             frame_counter=frame_counter, base_pos=robot.base_pos,
             state_history=state_history, cube_id=cube_id,
@@ -670,6 +741,16 @@ def move_and_grab_cube(robot, tray_pos, table_id, plane_id, tray_id, EXCLUDE_TAB
             plane_id=plane_id, tray_id=tray_id,
             EXCLUDE_TABLE=EXCLUDE_TABLE
         )
+
+        # robot.move_gripper(0.4)
+        # update_simulation(
+        #     45, capture_frames=True, iter_folder=iter_folder,
+        #     frame_counter=frame_counter, robot=robot, base_pos=robot.base_pos,
+        #     state_history=state_history, cube_id=cube_id,
+        #     cube_pos_history=cube_pos_history, table_id=table_id,
+        #     plane_id=plane_id, tray_id=tray_id,
+        #     EXCLUDE_TABLE=EXCLUDE_TABLE
+        # )
 
         # Lift cube
         robot.move_arm_ik([cube_start_pos[0], cube_start_pos[1], 1.18], eef_orientation)
@@ -699,7 +780,7 @@ def move_and_grab_cube(robot, tray_pos, table_id, plane_id, tray_id, EXCLUDE_TAB
 
         # Open gripper smoothly
         interpolate_gripper(
-            robot, 0.085, steps=25,
+            robot, target_angle=0, steps=50,
             capture_frames=True, iter_folder=iter_folder,
             frame_counter=frame_counter, base_pos=robot.base_pos,
             state_history=state_history, cube_id=cube_id,
