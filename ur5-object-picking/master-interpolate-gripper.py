@@ -242,12 +242,12 @@ def interpolate_gripper(robot, target_angle, steps=60,
                 force=500,
                 maxVelocity=1.0
             )
-        # 
+        
         # Step simulation - use moderate number of steps
         for _ in range(500):
             p.stepSimulation()
-# 
-# 
+ 
+ 
         # p.resetJointState(robot.id, robot.mimic_parent_id, interpolated_angle)
 
         # for joint_id, multiplier in robot.mimic_child_multiplier.items():
@@ -660,14 +660,10 @@ def move_and_grab_cube(robot, tray_pos, table_id, plane_id, tray_id, EXCLUDE_TAB
                 robot.id, joint_id, p.POSITION_CONTROL, target_joint_positions[i]
             )
 
-        # p.setJointMotorControl2(
-        #     robot.id,
-        #     robot.mimic_parent_id,
-        #     p.POSITION_CONTROL,
-        #     targetPosition=0.0000,
-        #     force=200,
-        # )
 
+        """
+        Forcing the gripper to reset joints .. 
+        """
         p.resetJointState(robot.id, robot.mimic_parent_id, 0)
 # 
         for joint_id, multiplier in robot.mimic_child_multiplier.items():
