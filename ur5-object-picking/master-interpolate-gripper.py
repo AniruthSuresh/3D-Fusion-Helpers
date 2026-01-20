@@ -111,7 +111,7 @@ class UR5Robotiq85:
             )
             p.changeConstraint(c, gearRatio=-multiplier, maxForce=100, erp=1)
 
-    def move_arm_ik(self, target_pos, target_orn):
+    def move_arm_ik(self, target_pos, target_orn ):
         joint_poses = p.calculateInverseKinematics(
             self.id,
             self.eef_id,
@@ -130,6 +130,8 @@ class UR5Robotiq85:
                 joint_poses[i],
                 maxVelocity=self.max_velocity,
             )
+
+
 
     def move_gripper(self, open_length):
         open_length = max(
@@ -164,7 +166,7 @@ class UR5Robotiq85:
         return state
 
 
-def interpolate_gripper(robot, target_open_length, steps=25, 
+def interpolate_gripper(robot, target_angle, steps=25, 
                         capture_frames=True, iter_folder=None,
                         frame_counter=None, base_pos=None,
                         state_history=None, cube_id=None,
@@ -174,26 +176,30 @@ def interpolate_gripper(robot, target_open_length, steps=25,
     # Get current gripper position
     current_gripper_state = p.getJointState(robot.id, robot.mimic_parent_id)
     current_angle = current_gripper_state[0]
+
     
-    # Calculate target angle
-    target_open_length = max(
-        robot.gripper_range[0], min(target_open_length, robot.gripper_range[1])
-    )
-    target_angle = 0.715 - math.asin((target_open_length - 0.010) / 0.1143)
-    
+    target_angle = target_angle
+
     # Interpolate between current and target angle
     for i in range(steps):
         alpha = (i + 1) / steps  # Linear interpolation factor
         interpolated_angle = current_angle + alpha * (target_angle - current_angle)
         
+        print(f"\nStep {i+1}/{steps}: Setting gripper angle to {interpolated_angle:.4f}")
         # Set gripper to interpolated position
         p.setJointMotorControl2(
             robot.id, 
             robot.mimic_parent_id, 
             p.POSITION_CONTROL, 
-            targetPosition=interpolated_angle
+            targetPosition=interpolated_angle,
+            force=4000  # Add force to maintain position
         )
-        
+    
+        for _ in range(500):
+            p.stepSimulation()
+
+        time.sleep(0.55)
+
         # Update simulation for this step
         update_simulation(
             1,  # Single step per interpolation
@@ -210,6 +216,11 @@ def interpolate_gripper(robot, target_open_length, steps=25,
             tray_id=tray_id,
             EXCLUDE_TABLE=EXCLUDE_TABLE
         )
+
+        print("Gripper now at position: ", p.getJointState(robot.id, robot.mimic_parent_id)[0])
+
+
+
 
 def create_data_folders(iter_folder):
     tp_rgb_dir = os.path.join(iter_folder, "third_person", "rgb")
@@ -668,14 +679,14 @@ def move_and_grab_cube(robot, tray_pos, table_id, plane_id, tray_id, EXCLUDE_TAB
             state_history=state_history, cube_id=cube_id,
             cube_pos_history=cube_pos_history, table_id=table_id,
             plane_id=plane_id, tray_id=tray_id,
-            EXCLUDE_TABLE=EXCLUDE_TABLE
+            EXCLUDE_TABLE=EXCLUDE_TABLE 
         )
 
         # Move above tray
         tray_offset = random.uniform(0.1, 0.3)
         robot.move_arm_ik(
             [tray_pos[0] + tray_offset, tray_pos[1] + tray_offset, tray_pos[2] + 0.56],
-            eef_orientation,
+            eef_orientation
         )
         update_simulation(
             150, capture_frames=True, iter_folder=iter_folder,
@@ -686,7 +697,6 @@ def move_and_grab_cube(robot, tray_pos, table_id, plane_id, tray_id, EXCLUDE_TAB
             EXCLUDE_TABLE=EXCLUDE_TABLE
         )
 
-        # Open gripper
         # Open gripper smoothly
         interpolate_gripper(
             robot, 0.085, steps=25,
@@ -697,6 +707,8 @@ def move_and_grab_cube(robot, tray_pos, table_id, plane_id, tray_id, EXCLUDE_TAB
             plane_id=plane_id, tray_id=tray_id,
             EXCLUDE_TABLE=EXCLUDE_TABLE
         )
+
+
 
         # Remove cube
         p.removeBody(cube_id)
