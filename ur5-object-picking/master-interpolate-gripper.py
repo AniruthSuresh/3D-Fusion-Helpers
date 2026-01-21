@@ -363,7 +363,7 @@ def save_camera_pose(pose_dict, poses_dir, frame_idx):
 
 def compute_extrinsics(cam_pos, cam_target, cam_up):
     """Compute camera extrinsics matrix from position, target, and up vector"""
-    cam_pos = np.array(cam_pos)H
+    cam_pos = np.array(cam_pos)
     cam_target = np.array(cam_target)
     cam_up = np.array(cam_up)
 
