@@ -623,7 +623,7 @@ def save_point_cloud_ply(points, colors, filename, exclude_mask=None):
 
 
 def setup_simulation():
-    p.connect(p.GUI)
+    p.connect(p.DIRECT)
     p.setGravity(0, 0, -9.8)
     p.setAdditionalSearchPath(pybullet_data.getDataPath())
     
@@ -883,12 +883,16 @@ def move_and_grab_cube(robot, tray_pos, table_id, plane_id, tray_id, EXCLUDE_TAB
 
 
 def main():
-    EXCLUDE_TABLE = False
+    EXCLUDE_TABLE = True
+
+    """
+    If excluding table from point clouds, set EXCLUDE_TABLE = True
+    0r else False to include table in point clouds
+    """
+    
     tray_pos, tray_orn, table_id, plane_id, tray_id = setup_simulation()
     robot = UR5Robotiq85([0, 0, 0.62], [0, 0, 0])
     robot.load()
-    # Set capture_table=False to hide table during data capture (default)
-    # Set capture_table=True to show table during data capture
     move_and_grab_cube(robot, tray_pos, table_id, plane_id, tray_id , EXCLUDE_TABLE = EXCLUDE_TABLE)
 
 
