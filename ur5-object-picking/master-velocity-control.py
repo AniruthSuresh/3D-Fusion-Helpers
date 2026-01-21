@@ -20,8 +20,10 @@ class UR5Robotiq85:
         self.gripper_range = [0, 0.085]
         self.max_velocity = 3
         self.current_gripper_velocity = 0.0  # Track current gripper velocity command
-        self.gripper_angle_override = None
 
+        
+        self.gripper_angle_override = None
+        self.GRIPPER_NORM_LIMIT = 0.2
 
     def load(self):
         self.id = p.loadURDF(
@@ -177,16 +179,21 @@ class UR5Robotiq85:
 
             if self.gripper_angle_override is not None:
                 print("Using gripper angle override:", self.gripper_angle_override)
-                gripper_angle = self.gripper_angle_override
+                gripper_val = self.gripper_angle_override
             else:
-                gripper_state = p.getJointState(self.id, self.mimic_parent_id)
-                gripper_angle = gripper_state[0]
-                if abs(gripper_angle) < 1e-4:
-                    gripper_angle = 0.0
-                    
-                print("Fetching actual gripper angle from simulation "+ str(gripper_angle))
+            
+                raw_angle = p.getJointState(self.id, self.mimic_parent_id)[0]
+                
+                # 1. Noise Suppression (Floor to 0 if very small)
+                if abs(raw_angle) < 1e-4:
+                    raw_angle = 0.0
+                
+                # 2. Real-time Normalization (Scale 0-0.2 to 0-1.0)
+                gripper_val = np.clip(raw_angle / self.GRIPPER_NORM_LIMIT, 0.0, 1.0)
 
-            state = np.concatenate([eef_pos, eef_orn_euler, joint_states, [gripper_angle]])
+                print("Raw gripper angle:", raw_angle, "Normalized gripper value:", gripper_val)
+
+            state = np.concatenate([eef_pos, eef_orn_euler, joint_states, [gripper_val]])
             return state
 
 
@@ -308,6 +315,7 @@ def update_simulation(
     robot=None,
     base_pos=None,
     state_history=None,
+    action_history = None , 
     cube_id=None,
     cube_pos_history=None,
     table_id=None,
@@ -488,6 +496,10 @@ def update_simulation(
             if state_history is not None:
                 state_history.append(current_state)
 
+            # Record the discrete command (1, 0, -1)
+            if action_history is not None:
+                action_history.append(robot.current_gripper_velocity)
+
             # ============ SAVE CUBE POSITION ============
             if cube_id is not None and cube_pos_history is not None:
                 cube_pos, cube_orn = p.getBasePositionAndOrientation(cube_id)
@@ -565,6 +577,7 @@ def move_and_grab_cube(robot, tray_pos, table_id, plane_id, tray_id, EXCLUDE_TAB
         frame_counter = [0]
         state_history = []
         cube_pos_history = []
+        action_history = []
 
         print(f"\n{'='*60}")
         print(f"ATTEMPT {total_attempts + 1} (Successful: {successful_iterations}/36)")
@@ -636,33 +649,30 @@ def move_and_grab_cube(robot, tray_pos, table_id, plane_id, tray_id, EXCLUDE_TAB
 
         # 1. Move Above Cube
         robot.move_arm_ik([cube_start_pos[0], cube_start_pos[1], 0.83], eef_orn)
-        update_simulation(50, capture_frames=True, iter_folder=temp_folder, frame_counter=frame_counter, robot=robot, base_pos=robot.base_pos, state_history=state_history, cube_id=cube_id, cube_pos_history=cube_pos_history, table_id=table_id, plane_id=plane_id, tray_id=tray_id, EXCLUDE_TABLE=EXCLUDE_TABLE)
+        update_simulation(50, capture_frames=True, iter_folder=temp_folder, frame_counter=frame_counter, robot=robot, base_pos=robot.base_pos, state_history=state_history, action_history =  action_history, cube_id=cube_id, cube_pos_history=cube_pos_history, table_id=table_id, plane_id=plane_id, tray_id=tray_id, EXCLUDE_TABLE=EXCLUDE_TABLE)
 
         # 2. Move Down
         robot.move_arm_ik([cube_start_pos[0], cube_start_pos[1], 0.78], eef_orn)
-        update_simulation(50, capture_frames=True, iter_folder=temp_folder, frame_counter=frame_counter, robot=robot, base_pos=robot.base_pos, state_history=state_history, cube_id=cube_id, cube_pos_history=cube_pos_history, table_id=table_id, plane_id=plane_id, tray_id=tray_id, EXCLUDE_TABLE=EXCLUDE_TABLE)
-
+        update_simulation(50, capture_frames=True, iter_folder=temp_folder, frame_counter=frame_counter, robot=robot, base_pos=robot.base_pos, state_history=state_history, action_history =  action_history, cube_id=cube_id, cube_pos_history=cube_pos_history, table_id=table_id, plane_id=plane_id, tray_id=tray_id, EXCLUDE_TABLE=EXCLUDE_TABLE)
         # 3. Close Gripper
         robot.move_gripper(1.0)
-        update_simulation(25, capture_frames=True, iter_folder=temp_folder, frame_counter=frame_counter, robot=robot, base_pos=robot.base_pos, state_history=state_history, cube_id=cube_id, cube_pos_history=cube_pos_history, table_id=table_id, plane_id=plane_id, tray_id=tray_id, EXCLUDE_TABLE=EXCLUDE_TABLE)
+        update_simulation(25, capture_frames=True, iter_folder=temp_folder, frame_counter=frame_counter, robot=robot, base_pos=robot.base_pos, state_history=state_history, action_history =  action_history, cube_id=cube_id, cube_pos_history=cube_pos_history, table_id=table_id, plane_id=plane_id, tray_id=tray_id, EXCLUDE_TABLE=EXCLUDE_TABLE)
 
         # LOCK GRIPPER ANGLE FOR TRANSPORT
-        current_locked_angle = p.getJointState(robot.id, robot.mimic_parent_id)[0]
-        robot.gripper_angle_override = current_locked_angle
-        print(f"Gripper locked at: {current_locked_angle:.4f}")
-
+        # LOCK PHASE: Set override to 1.0 (Fully closed normalized value)
+        robot.gripper_angle_override = 1.0
+        print("Gripper locked at normalized 1.0 for transport.")
         # 4. Lift Cube
         robot.move_arm_ik([cube_start_pos[0], cube_start_pos[1], 1.18], eef_orn)
-        update_simulation(50, capture_frames=True, iter_folder=temp_folder, frame_counter=frame_counter, robot=robot, base_pos=robot.base_pos, state_history=state_history, cube_id=cube_id, cube_pos_history=cube_pos_history, table_id=table_id, plane_id=plane_id, tray_id=tray_id, EXCLUDE_TABLE=EXCLUDE_TABLE)
+        update_simulation(50, capture_frames=True, iter_folder=temp_folder, frame_counter=frame_counter, robot=robot, base_pos=robot.base_pos, state_history=state_history, action_history =  action_history, cube_id=cube_id, cube_pos_history=cube_pos_history, table_id=table_id, plane_id=plane_id, tray_id=tray_id, EXCLUDE_TABLE=EXCLUDE_TABLE)
 
         # 5. Move to Tray
         robot.move_arm_ik([tray_pos[0], tray_pos[1], tray_pos[2] + 0.56], eef_orn)
-        update_simulation(150, capture_frames=True, iter_folder=temp_folder, frame_counter=frame_counter, robot=robot, base_pos=robot.base_pos, state_history=state_history, cube_id=cube_id, cube_pos_history=cube_pos_history, table_id=table_id, plane_id=plane_id, tray_id=tray_id, EXCLUDE_TABLE=EXCLUDE_TABLE)
-
+        update_simulation(150, capture_frames=True, iter_folder=temp_folder, frame_counter=frame_counter, robot=robot, base_pos=robot.base_pos, state_history=state_history, action_history =  action_history, cube_id=cube_id, cube_pos_history=cube_pos_history, table_id=table_id, plane_id=plane_id, tray_id=tray_id, EXCLUDE_TABLE=EXCLUDE_TABLE)
         # 6. Open Gripper (Release Lock)
         robot.gripper_angle_override = None 
         robot.move_gripper(-1.0)
-        update_simulation(25, capture_frames=True, iter_folder=temp_folder, frame_counter=frame_counter, robot=robot, base_pos=robot.base_pos, state_history=state_history, cube_id=cube_id, cube_pos_history=cube_pos_history, table_id=table_id, plane_id=plane_id, tray_id=tray_id, EXCLUDE_TABLE=EXCLUDE_TABLE)
+        update_simulation(25, capture_frames=True, iter_folder=temp_folder, frame_counter=frame_counter, robot=robot, base_pos=robot.base_pos, state_history=state_history, action_history =  action_history, cube_id=cube_id, cube_pos_history=cube_pos_history, table_id=table_id, plane_id=plane_id, tray_id=tray_id, EXCLUDE_TABLE=EXCLUDE_TABLE)
 
         # (Final success check and cleanup...)
         for _ in range(1500):
@@ -704,16 +714,23 @@ def move_and_grab_cube(robot, tray_pos, table_id, plane_id, tray_id, EXCLUDE_TAB
             arm_joint_deltas = np.diff(agent_pos[:, 6:12], axis=0)
             arm_joint_deltas = np.vstack([arm_joint_deltas, np.zeros(6)])
             
-            # For gripper velocity (index 12), actions = current velocity commands
-            gripper_velocities = agent_pos[:, 12:13]  # Keep as column vector
+
             
             # For EEF pose (indices 0-5), calculate deltas
-            eef_deltas = np.diff(agent_pos[:, 0:6], axis=0)
-            eef_deltas = np.vstack([eef_deltas, np.zeros(6)])
+            eef_deltas = np.vstack([np.diff(agent_pos[:, 0:6], axis=0), np.zeros(6)])
+            arm_deltas = np.vstack([np.diff(agent_pos[:, 6:12], axis=0), np.zeros(6)])
             
-            # Combine: [eef_deltas(6), arm_deltas(6), gripper_velocity_state(1)]
-            actions = np.hstack([eef_deltas, arm_joint_deltas, gripper_velocities])
+            # MAP RAW COMMANDS TO DISCRETE SAVED ACTIONS
+            raw_cmds = np.array(action_history)
+            saved_gripper_cmds = np.zeros_like(raw_cmds)
             
+            # Logic: 1.0 -> 1, 0.0 -> 0, -0.25 -> -1
+            saved_gripper_cmds[raw_cmds == 1.0] = 1.0
+            saved_gripper_cmds[raw_cmds == 0.0] = 0.0
+            saved_gripper_cmds[raw_cmds == -0.25] = -1.0
+            
+            actions = np.hstack([eef_deltas, arm_deltas, saved_gripper_cmds.reshape(-1, 1)])
+
             cube_positions = np.array(cube_pos_history)
 
             state_action_data = {
