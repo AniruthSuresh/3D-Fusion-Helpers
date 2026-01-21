@@ -16,7 +16,7 @@ from shutil import copy2
 # -------------------------
 # CONFIG
 # -------------------------
-DATA_ROOT = "/home/aniruth/Desktop/RRC/3D-Fusion-Helpers/ur5-object-picking/dataset/"  # Input: simulation dataset
+DATA_ROOT = "../ur5-object-picking/dataset/"  # Input: simulation dataset
 OUTPUT_ROOT = "./processed-sim-data-new"          # Output: processed data
 
 # State/Action dimensions for UR5 sim data
