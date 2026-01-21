@@ -844,8 +844,7 @@ def main():
     tray_pos, tray_orn, table_id, plane_id, tray_id = setup_simulation()
     robot = UR5Robotiq85([0, 0, 0.62], [0, 0, 0])
     robot.load()
-    # Set capture_table=False to hide table during data capture (default)
-    # Set capture_table=True to show table during data capture
+
     move_and_grab_cube(robot, tray_pos, table_id, plane_id, tray_id , EXCLUDE_TABLE = EXCLUDE_TABLE)
 
 
