@@ -185,7 +185,7 @@ class UR5Robotiq85:
                 raw_angle = p.getJointState(self.id, self.mimic_parent_id)[0]
                 
                 # 1. Noise Suppression (Floor to 0 if very small)
-                if abs(raw_angle) < 1e-4:
+                if abs(raw_angle) < 1e-3:
                     raw_angle = 0.0
                 
                 # 2. Real-time Normalization (Scale 0-0.2 to 0-1.0)
@@ -669,10 +669,11 @@ def move_and_grab_cube(robot, tray_pos, table_id, plane_id, tray_id, EXCLUDE_TAB
         # 5. Move to Tray
         robot.move_arm_ik([tray_pos[0], tray_pos[1], tray_pos[2] + 0.56], eef_orn)
         update_simulation(150, capture_frames=True, iter_folder=temp_folder, frame_counter=frame_counter, robot=robot, base_pos=robot.base_pos, state_history=state_history, action_history =  action_history, cube_id=cube_id, cube_pos_history=cube_pos_history, table_id=table_id, plane_id=plane_id, tray_id=tray_id, EXCLUDE_TABLE=EXCLUDE_TABLE)
+        
         # 6. Open Gripper (Release Lock)
         robot.gripper_angle_override = None 
-        robot.move_gripper(-1.0)
-        update_simulation(25, capture_frames=True, iter_folder=temp_folder, frame_counter=frame_counter, robot=robot, base_pos=robot.base_pos, state_history=state_history, action_history =  action_history, cube_id=cube_id, cube_pos_history=cube_pos_history, table_id=table_id, plane_id=plane_id, tray_id=tray_id, EXCLUDE_TABLE=EXCLUDE_TABLE)
+        robot.move_gripper(-0.25)
+        update_simulation(40, capture_frames=True, iter_folder=temp_folder, frame_counter=frame_counter, robot=robot, base_pos=robot.base_pos, state_history=state_history, action_history =  action_history, cube_id=cube_id, cube_pos_history=cube_pos_history, table_id=table_id, plane_id=plane_id, tray_id=tray_id, EXCLUDE_TABLE=EXCLUDE_TABLE)
 
         # (Final success check and cleanup...)
         for _ in range(1500):
