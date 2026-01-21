@@ -193,7 +193,9 @@ class UR5Robotiq85:
         gripper_state = p.getJointState(self.id, self.mimic_parent_id)
         gripper_angle = gripper_state[0]
 
-        # print(f"Gripper angle : {gripper_angle}")
+
+
+        print(f"Gripper angle : {gripper_angle}")
         state = np.concatenate([eef_pos, eef_orn_euler, joint_states, [gripper_angle]])
         return state
     
@@ -245,7 +247,7 @@ def interpolate_gripper(robot, target_angle, steps=60,
         # Step simulation - use moderate number of steps
         for _ in range(50):
             p.stepSimulation()
- 
+
 
         update_simulation(
             1,
@@ -937,6 +939,7 @@ def move_and_grab_cube(robot, tray_pos, table_id, plane_id, tray_id, EXCLUDE_TAB
 
 
 def main():
+    
     EXCLUDE_TABLE = True
 
     """
