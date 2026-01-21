@@ -181,6 +181,9 @@ class UR5Robotiq85:
             else:
                 gripper_state = p.getJointState(self.id, self.mimic_parent_id)
                 gripper_angle = gripper_state[0]
+                if abs(gripper_angle) < 1e-4:
+                    gripper_angle = 0.0
+                    
                 print("Fetching actual gripper angle from simulation "+ str(gripper_angle))
 
             state = np.concatenate([eef_pos, eef_orn_euler, joint_states, [gripper_angle]])
