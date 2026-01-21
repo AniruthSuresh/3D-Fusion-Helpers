@@ -176,6 +176,10 @@ class UR5Robotiq85:
         # Use the stored gripper velocity command instead of angle
         gripper_velocity = self.current_gripper_velocity
         print(f"Gripper velocity: {gripper_velocity:.4f}")
+        
+        gripper_state = p.getJointState(self.id, self.mimic_parent_id)
+        gripper_angle = gripper_state[0]
+        print(f"Gripper angle : {gripper_angle}")
 
         state = np.concatenate([eef_pos, eef_orn_euler, joint_states, [gripper_velocity]])
         return state
@@ -318,10 +322,8 @@ def update_simulation(
     # Create list of object IDs to exclude from point clouds
     exclude_ids = []
     if table_id is not None and EXCLUDE_TABLE:
-        # print("Excluding table from point clouds with {}".format(table_id))
         exclude_ids.append(table_id)
     if plane_id is not None:
-        # print("Excluding plane from point clouds with {}".format(plane_id))
         exclude_ids.append(plane_id)
 
     for _ in range(steps):
@@ -539,9 +541,9 @@ def random_color_cube(cube_id):
     color = [random.random(), random.random(), random.random(), 1.0]
     p.changeVisualShape(cube_id, -1, rgbaColor=color)
 
-
 def move_and_grab_cube(robot, tray_pos, table_id, plane_id, tray_id, EXCLUDE_TABLE, base_save_dir="dataset"):
     iteration = 0
+
     while True:
         iter_folder = os.path.join(base_save_dir, f"iter_{iteration:04d}")
         os.makedirs(iter_folder, exist_ok=True)
@@ -556,10 +558,24 @@ def move_and_grab_cube(robot, tray_pos, table_id, plane_id, tray_id, EXCLUDE_TAB
             p.setJointMotorControl2(
                 robot.id, joint_id, p.POSITION_CONTROL, target_joint_positions[i]
             )
-        robot.move_gripper(0)  # Open gripper
-        
+    
+        p.setJointMotorControl2(
+            robot.id, 
+            robot.mimic_parent_id, 
+            p.POSITION_CONTROL, 
+            targetPosition=0.000,
+            force=1500,
+            maxVelocity=1.5
+        )
+
+        robot.move_gripper(0.0)
+
         for _ in range(5000):
             p.stepSimulation()
+
+        actual_angle = p.getJointState(robot.id, robot.mimic_parent_id)[0]
+
+        print(f"Gripper reset to: {actual_angle:.4f}\n")
 
         update_simulation(
             200,
@@ -620,10 +636,9 @@ def move_and_grab_cube(robot, tray_pos, table_id, plane_id, tray_id, EXCLUDE_TAB
             EXCLUDE_TABLE=EXCLUDE_TABLE
         )
 
-        # Hold gripper position after closing (IMPORTANT FIX)
-        robot.move_gripper(0)  # Hold position (velocity = 0)
 
-        
+
+
         # Lift cube
         robot.move_arm_ik([cube_start_pos[0], cube_start_pos[1], 1.18], eef_orientation)
         update_simulation(
