@@ -178,7 +178,7 @@ class UR5Robotiq85:
                 joint_states.append(joint_state[0])
 
             if self.gripper_angle_override is not None:
-                print("Using gripper angle override:", self.gripper_angle_override)
+                # print("Using gripper angle override:", self.gripper_angle_override)
                 gripper_val = self.gripper_angle_override
             else:
             
@@ -191,7 +191,7 @@ class UR5Robotiq85:
                 # 2. Real-time Normalization (Scale 0-0.2 to 0-1.0)
                 gripper_val = np.clip(raw_angle / self.GRIPPER_NORM_LIMIT, 0.0, 1.0)
 
-                print("Raw gripper angle:", raw_angle, "Normalized gripper value:", gripper_val)
+                # print("Raw gripper angle:", raw_angle, "Normalized gripper value:", gripper_val)
 
             state = np.concatenate([eef_pos, eef_orn_euler, joint_states, [gripper_val]])
             return state
@@ -621,7 +621,7 @@ def move_and_grab_cube(robot, tray_pos, table_id, plane_id, tray_id, EXCLUDE_TAB
             EXCLUDE_TABLE=EXCLUDE_TABLE,
         )
 
-        print(f"Gripper reset to: {actual_angle:.4f}\n")
+        # print(f"Gripper reset to: {actual_angle:.4f}\n")
         robot.move_gripper(0.0)
     
         for _ in range(5000):
@@ -629,7 +629,7 @@ def move_and_grab_cube(robot, tray_pos, table_id, plane_id, tray_id, EXCLUDE_TAB
 
         actual_angle = p.getJointState(robot.id, robot.mimic_parent_id)[0]
 
-        print(f"Gripper again reset to: {actual_angle:.4f}\n")
+        # print(f"Gripper again reset to: {actual_angle:.4f}\n")
 
         
         
