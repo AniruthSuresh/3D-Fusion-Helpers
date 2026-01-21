@@ -273,7 +273,7 @@ def interpolate_gripper(robot, target_angle, steps=60,
             tray_id=tray_id,
             EXCLUDE_TABLE=EXCLUDE_TABLE
         )
-
+    
     final_angle = p.getJointState(robot.id, robot.mimic_parent_id)[0]
     print(f"Final gripper position: {final_angle:.4f} (target was {target_angle:.4f})")
     print(f"Error: {abs(final_angle - target_angle):.4f}")
@@ -363,7 +363,7 @@ def save_camera_pose(pose_dict, poses_dir, frame_idx):
 
 def compute_extrinsics(cam_pos, cam_target, cam_up):
     """Compute camera extrinsics matrix from position, target, and up vector"""
-    cam_pos = np.array(cam_pos)
+    cam_pos = np.array(cam_pos)H
     cam_target = np.array(cam_target)
     cam_up = np.array(cam_up)
 
@@ -645,6 +645,10 @@ def random_color_cube(cube_id):
 
 def move_and_grab_cube(robot, tray_pos, table_id, plane_id, tray_id, EXCLUDE_TABLE, base_save_dir="dataset"):
     iteration = 0
+
+    passed_iterations = []
+    failed_iterations = []
+
     while True:
         iter_folder = os.path.join(base_save_dir, f"iter_{iteration:04d}")
         os.makedirs(iter_folder, exist_ok=True)
@@ -785,6 +789,27 @@ def move_and_grab_cube(robot, tray_pos, table_id, plane_id, tray_id, EXCLUDE_TAB
             EXCLUDE_TABLE=EXCLUDE_TABLE
         )
 
+
+        cube_min, cube_max = p.getAABB(cube_id)
+        tray_min, tray_max = p.getAABB(tray_id)
+
+        # Add small margin to stay inside the tray rim
+        margin = 0.02
+
+        inside_tray = (
+            cube_min[0] > tray_min[0] + margin and cube_max[0] < tray_max[0] - margin and
+            cube_min[1] > tray_min[1] + margin and cube_max[1] < tray_max[1] - margin and
+            cube_min[2] > tray_min[2] and cube_max[2] < tray_max[2] + 0.1
+        )
+
+        if inside_tray:
+            passed_iterations.append(iteration)
+            cube_final_pos = p.getBasePositionAndOrientation(cube_id)[0]
+            print(f"✓ Cube successfully placed in tray at {cube_final_pos}")
+        else:
+            failed_iterations.append(iteration)
+            cube_final_pos = p.getBasePositionAndOrientation(cube_id)[0]
+            print(f"✗ Cube missed tray, ended at {cube_final_pos}")
 
 
         # Remove cube
