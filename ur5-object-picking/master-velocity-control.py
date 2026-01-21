@@ -374,6 +374,17 @@ def update_simulation(
                 depth_buffer_tp, view_matrix_tp, proj_matrix
             )
 
+            # --- APPLY FILTERS TO NPY DATA ---
+            points_tp_flat = point_cloud_tp.reshape(-1, 3)
+            # Filter 1: Depth threshold
+            valid_mask_tp = points_tp_flat[:, 2] < 2.5
+            # Filter 2: Segmentation exclusion (Table/Plane)
+            exclude_mask_flat_tp = exclude_mask_tp.flatten()
+            final_mask_tp = valid_mask_tp & (~exclude_mask_flat_tp)
+            
+            # Filtered point cloud for NPY
+            filtered_pcd_tp = points_tp_flat[final_mask_tp]
+
             # Save third-person data
             cv2.imwrite(
                 os.path.join(dirs["tp_rgb"], f"tp_rgb_{frame_counter[0]:04d}.png"),
@@ -385,7 +396,7 @@ def update_simulation(
             )
             np.save(
                 os.path.join(dirs["tp_pcd"], f"tp_pcd_{frame_counter[0]:04d}.npy"),
-                point_cloud_tp,
+                filtered_pcd_tp, 
             )
             np.save(
                 os.path.join(dirs["tp_seg"], f"tp_seg_{frame_counter[0]:04d}.npy"),
@@ -432,6 +443,17 @@ def update_simulation(
                 depth_buffer_wr, view_matrix_wr, proj_matrix
             )
 
+            # --- APPLY FILTERS TO NPY DATA ---
+            points_wr_flat = point_cloud_wr.reshape(-1, 3)
+            # Filter 1: Depth threshold
+            valid_mask_wr = points_wr_flat[:, 2] < 2.5
+            # Filter 2: Segmentation exclusion
+            exclude_mask_flat_wr = exclude_mask_wr.flatten()
+            final_mask_wr = valid_mask_wr & (~exclude_mask_flat_wr)
+            
+            # Filtered point cloud for NPY
+            filtered_pcd_wr = points_wr_flat[final_mask_wr]
+
             # Save wrist data
             cv2.imwrite(
                 os.path.join(dirs["wr_rgb"], f"wr_rgb_{frame_counter[0]:04d}.png"),
@@ -443,7 +465,7 @@ def update_simulation(
             )
             np.save(
                 os.path.join(dirs["wr_pcd"], f"wr_pcd_{frame_counter[0]:04d}.npy"),
-                point_cloud_wr,
+                filtered_pcd_wr, # Saved filtered N x 3 array
             )
             np.save(
                 os.path.join(dirs["wr_seg"], f"wr_seg_{frame_counter[0]:04d}.npy"),
