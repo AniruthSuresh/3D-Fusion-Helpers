@@ -620,6 +620,10 @@ def move_and_grab_cube(robot, tray_pos, table_id, plane_id, tray_id, EXCLUDE_TAB
             EXCLUDE_TABLE=EXCLUDE_TABLE
         )
 
+        # Hold gripper position after closing (IMPORTANT FIX)
+        robot.move_gripper(0)  # Hold position (velocity = 0)
+
+        
         # Lift cube
         robot.move_arm_ik([cube_start_pos[0], cube_start_pos[1], 1.18], eef_orientation)
         update_simulation(
