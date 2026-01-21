@@ -193,7 +193,7 @@ class UR5Robotiq85:
         gripper_state = p.getJointState(self.id, self.mimic_parent_id)
         gripper_angle = gripper_state[0]
 
-        print(f"Gripper angle : {gripper_angle}")
+        # print(f"Gripper angle : {gripper_angle}")
         state = np.concatenate([eef_pos, eef_orn_euler, joint_states, [gripper_angle]])
         return state
     
@@ -206,8 +206,7 @@ def interpolate_gripper(robot, target_angle, steps=60,
                         cube_pos_history=None, table_id=None,
                         plane_id=None, tray_id=None, EXCLUDE_TABLE=True):
     """Smoothly interpolate gripper position over multiple steps"""
-    
-    # Get current gripper position
+
     current_gripper_state = p.getJointState(robot.id, robot.mimic_parent_id)
     current_angle = current_gripper_state[0]
 
@@ -226,37 +225,27 @@ def interpolate_gripper(robot, target_angle, steps=60,
             robot.mimic_parent_id, 
             p.POSITION_CONTROL, 
             targetPosition=interpolated_angle,
-            force=500,
-            maxVelocity=1.0
+            force=1500,
+            maxVelocity=1.5
         )
         
-  
+
         # CRITICAL: Also control all mimic children joints explicitly
-        for joint_id, multiplier in robot.mimic_child_multiplier.items():
-            child_target = interpolated_angle * multiplier
-            p.setJointMotorControl2(
-                robot.id,
-                joint_id,
-                p.POSITION_CONTROL,
-                targetPosition=child_target,
-                force=500,
-                maxVelocity=1.0
-            )
+        # for joint_id, multiplier in robot.mimic_child_multiplier.items():
+        #     child_target = interpolated_angle * multiplier
+        #     p.setJointMotorControl2(
+        #         robot.id,
+        #         joint_id,
+        #         p.POSITION_CONTROL,
+        #         targetPosition=child_target,
+        #         force=500,
+        #         maxVelocity=1.0
+        #     )
         
         # Step simulation - use moderate number of steps
-        for _ in range(500):
+        for _ in range(50):
             p.stepSimulation()
  
- 
-        # p.resetJointState(robot.id, robot.mimic_parent_id, interpolated_angle)
-
-        # for joint_id, multiplier in robot.mimic_child_multiplier.items():
-        #     p.resetJointState(robot.id, joint_id, interpolated_angle * multiplier)
-    
-        # # Verify actual position
-        # actual_angle = p.getJointState(robot.id, robot.mimic_parent_id)[0]
-
-        # print(f"Actual {actual_angle:.4f}")
 
         update_simulation(
             1,
@@ -622,8 +611,15 @@ def save_point_cloud_ply(points, colors, filename, exclude_mask=None):
             f.write(f"{int(color[0])} {int(color[1])} {int(color[2])}\n")
 
 
+
 def setup_simulation():
-    p.connect(p.DIRECT)
+    try:
+        cid = p.connect(p.GUI)
+        print("PyBullet GUI connected")
+    except Exception:
+        cid = p.connect(p.DIRECT)
+        print("PyBullet running in DIRECT (headless) mode")
+
     p.setGravity(0, 0, -9.8)
     p.setAdditionalSearchPath(pybullet_data.getDataPath())
     
@@ -644,18 +640,27 @@ def random_color_cube(cube_id):
 
 
 def move_and_grab_cube(robot, tray_pos, table_id, plane_id, tray_id, EXCLUDE_TABLE, base_save_dir="dataset"):
-    iteration = 0
+    successful_iterations = 0
+    total_attempts = 0
+    failed_attempts = 0
+    
+    print("\n" + "="*60)
+    print("STARTING DATA COLLECTION")
+    print(f"Target: 36 successful trajectories")
+    print("="*60 + "\n")
 
-    passed_iterations = []
-    failed_iterations = []
-
-    while True:
-        iter_folder = os.path.join(base_save_dir, f"iter_{iteration:04d}")
-        os.makedirs(iter_folder, exist_ok=True)
+    while successful_iterations < 36:
+        # Create temp folder for this attempt
+        temp_folder = os.path.join(base_save_dir, f"temp_iter_{total_attempts:04d}")
+        os.makedirs(temp_folder, exist_ok=True)
 
         frame_counter = [0]
         state_history = []
         cube_pos_history = []
+
+        print(f"\n{'='*60}")
+        print(f"ATTEMPT {total_attempts + 1} (Successful: {successful_iterations}/36)")
+        print(f"{'='*60}\n")
 
         # Reset arm posture
         target_joint_positions = [0, -1.57, 1.57, -1.5, -1.57, 0.0]
@@ -664,29 +669,33 @@ def move_and_grab_cube(robot, tray_pos, table_id, plane_id, tray_id, EXCLUDE_TAB
                 robot.id, joint_id, p.POSITION_CONTROL, target_joint_positions[i]
             )
 
+        # Force gripper to reset
+        print("Resetting gripper...")
 
-        """
-        Forcing the gripper to reset joints .. 
-        """
-        p.resetJointState(robot.id, robot.mimic_parent_id, 0)
-# 
-        for joint_id, multiplier in robot.mimic_child_multiplier.items():
-            p.resetJointState(robot.id, joint_id, 0)
-    # 
-        actual_angle = p.getJointState(robot.id, robot.mimic_parent_id)[0]
+        # p.resetJointState(robot.id, robot.mimic_parent_id, 0)
+        # for joint_id, multiplier in robot.mimic_child_multiplier.items():
+        #     p.resetJointState(robot.id, joint_id, 0)
     
+        p.setJointMotorControl2(
+            robot.id, 
+            robot.mimic_parent_id, 
+            p.POSITION_CONTROL, 
+            targetPosition=0.000,
+            force=1500,
+            maxVelocity=1.5
+        )
 
-
+        
+    
         for _ in range(5000):
             p.stepSimulation()
 
-        print("\nStabilizing robot at rest pose...")
-
-        print(f"Gripper set to : {actual_angle}")
+        actual_angle = p.getJointState(robot.id, robot.mimic_parent_id)[0]
+        
         update_simulation(
             200,
             capture_frames=False,
-            iter_folder=iter_folder,
+            iter_folder=temp_folder,
             frame_counter=frame_counter,
             robot=robot,
             base_pos=robot.base_pos,
@@ -697,22 +706,25 @@ def move_and_grab_cube(robot, tray_pos, table_id, plane_id, tray_id, EXCLUDE_TAB
             EXCLUDE_TABLE=EXCLUDE_TABLE,
         )
 
-        # Random cube
+        print(f"Gripper reset to: {actual_angle:.4f}\n")
+
+
+        # Spawn random cube
         cube_start_pos = [random.uniform(0.3, 0.7), random.uniform(-0.1, 0.1), 0.65]
         cube_start_orn = p.getQuaternionFromEuler([0, 0, 0])
         cube_id = p.loadURDF("cube_small.urdf", cube_start_pos, cube_start_orn)
         random_color_cube(cube_id)
+        
+        print(f"Cube spawned at: [{cube_start_pos[0]:.4f}, {cube_start_pos[1]:.4f}, {cube_start_pos[2]:.4f}]")
 
         eef_state = robot.get_current_ee_position()
         eef_orientation = eef_state[1]
 
-        actual_gripper = p.getJointState(robot.id, robot.mimic_parent_id)[0]
-        print(f"Reset complete - Gripper position: {actual_gripper:.4f}")
-
-        # Move above cube
+        # Phase 1: Move above cube
+        print("Phase 1: Moving above cube...")
         robot.move_arm_ik([cube_start_pos[0], cube_start_pos[1], 0.83], eef_orientation)
         update_simulation(
-            50, capture_frames=True, iter_folder=iter_folder,
+            50, capture_frames=True, iter_folder=temp_folder,
             frame_counter=frame_counter, robot=robot, base_pos=robot.base_pos,
             state_history=state_history, cube_id=cube_id,
             cube_pos_history=cube_pos_history, table_id=table_id,
@@ -720,10 +732,11 @@ def move_and_grab_cube(robot, tray_pos, table_id, plane_id, tray_id, EXCLUDE_TAB
             EXCLUDE_TABLE=EXCLUDE_TABLE
         )
 
-        # Move down
+        # Phase 2: Move down to grasp
+        print("Phase 2: Moving down to grasp...")
         robot.move_arm_ik([cube_start_pos[0], cube_start_pos[1], 0.78], eef_orientation)
         update_simulation(
-            50, capture_frames=True, iter_folder=iter_folder,
+            50, capture_frames=True, iter_folder=temp_folder,
             frame_counter=frame_counter, robot=robot, base_pos=robot.base_pos,
             state_history=state_history, cube_id=cube_id,
             cube_pos_history=cube_pos_history, table_id=table_id,
@@ -731,10 +744,11 @@ def move_and_grab_cube(robot, tray_pos, table_id, plane_id, tray_id, EXCLUDE_TAB
             EXCLUDE_TABLE=EXCLUDE_TABLE
         )
 
-        # Close gripper smoothly
+        # Phase 3: Close gripper
+        print("Phase 3: Closing gripper...")
         interpolate_gripper(
-            robot, target_angle=0.45, steps=50,
-            capture_frames=True, iter_folder=iter_folder,
+            robot, target_angle=0.4, steps=50,
+            capture_frames=True, iter_folder=temp_folder,
             frame_counter=frame_counter, base_pos=robot.base_pos,
             state_history=state_history, cube_id=cube_id,
             cube_pos_history=cube_pos_history, table_id=table_id,
@@ -742,20 +756,11 @@ def move_and_grab_cube(robot, tray_pos, table_id, plane_id, tray_id, EXCLUDE_TAB
             EXCLUDE_TABLE=EXCLUDE_TABLE
         )
 
-        # robot.move_gripper(0.4)
-        # update_simulation(
-        #     45, capture_frames=True, iter_folder=iter_folder,
-        #     frame_counter=frame_counter, robot=robot, base_pos=robot.base_pos,
-        #     state_history=state_history, cube_id=cube_id,
-        #     cube_pos_history=cube_pos_history, table_id=table_id,
-        #     plane_id=plane_id, tray_id=tray_id,
-        #     EXCLUDE_TABLE=EXCLUDE_TABLE
-        # )
-
-        # Lift cube
+        # Phase 4: Lift cube
+        print("Phase 4: Lifting cube...")
         robot.move_arm_ik([cube_start_pos[0], cube_start_pos[1], 1.18], eef_orientation)
         update_simulation(
-            50, capture_frames=True, iter_folder=iter_folder,
+            50, capture_frames=True, iter_folder=temp_folder,
             frame_counter=frame_counter, robot=robot, base_pos=robot.base_pos,
             state_history=state_history, cube_id=cube_id,
             cube_pos_history=cube_pos_history, table_id=table_id,
@@ -763,14 +768,15 @@ def move_and_grab_cube(robot, tray_pos, table_id, plane_id, tray_id, EXCLUDE_TAB
             EXCLUDE_TABLE=EXCLUDE_TABLE 
         )
 
-        # Move above tray
+        # Phase 5: Move above tray
+        print("Phase 5: Moving to tray...")
         tray_offset = random.uniform(0.1, 0.3)
-        robot.move_arm_ik(
-            [tray_pos[0] + tray_offset, tray_pos[1] + tray_offset, tray_pos[2] + 0.56],
-            eef_orientation
-        )
+        target_tray_pos = [tray_pos[0] + tray_offset, tray_pos[1] + tray_offset, tray_pos[2] + 0.56]
+        print(f"  Target position: [{target_tray_pos[0]:.4f}, {target_tray_pos[1]:.4f}, {target_tray_pos[2]:.4f}]")
+        
+        robot.move_arm_ik(target_tray_pos, eef_orientation)
         update_simulation(
-            150, capture_frames=True, iter_folder=iter_folder,
+            150, capture_frames=True, iter_folder=temp_folder,
             frame_counter=frame_counter, robot=robot, base_pos=robot.base_pos,
             state_history=state_history, cube_id=cube_id,
             cube_pos_history=cube_pos_history, table_id=table_id,
@@ -778,10 +784,11 @@ def move_and_grab_cube(robot, tray_pos, table_id, plane_id, tray_id, EXCLUDE_TAB
             EXCLUDE_TABLE=EXCLUDE_TABLE
         )
 
-        # Open gripper smoothly
+        # Phase 6: Open gripper to release
+        print("Phase 6: Opening gripper to release...")
         interpolate_gripper(
-            robot, target_angle=0, steps=50,
-            capture_frames=True, iter_folder=iter_folder,
+            robot, target_angle=0.2, steps=20,
+            capture_frames=True, iter_folder=temp_folder,
             frame_counter=frame_counter, base_pos=robot.base_pos,
             state_history=state_history, cube_id=cube_id,
             cube_pos_history=cube_pos_history, table_id=table_id,
@@ -789,97 +796,144 @@ def move_and_grab_cube(robot, tray_pos, table_id, plane_id, tray_id, EXCLUDE_TAB
             EXCLUDE_TABLE=EXCLUDE_TABLE
         )
 
+        # Phase 7: Wait for cube to settle
+        print("Phase 7: Waiting for cube to settle...")
+        for _ in range(1500):
+            p.stepSimulation()
 
+        # ============ CHECK SUCCESS ============
         cube_min, cube_max = p.getAABB(cube_id)
         tray_min, tray_max = p.getAABB(tray_id)
 
-        # Add small margin to stay inside the tray rim
         margin = 0.02
-
         inside_tray = (
             cube_min[0] > tray_min[0] + margin and cube_max[0] < tray_max[0] - margin and
             cube_min[1] > tray_min[1] + margin and cube_max[1] < tray_max[1] - margin and
             cube_min[2] > tray_min[2] and cube_max[2] < tray_max[2] + 0.1
         )
 
+        cube_final_pos = p.getBasePositionAndOrientation(cube_id)[0]
+        
         if inside_tray:
-            passed_iterations.append(iteration)
-            cube_final_pos = p.getBasePositionAndOrientation(cube_id)[0]
-            print(f"✓ Cube successfully placed in tray at {cube_final_pos}")
-        else:
-            failed_iterations.append(iteration)
-            cube_final_pos = p.getBasePositionAndOrientation(cube_id)[0]
-            print(f"✗ Cube missed tray, ended at {cube_final_pos}")
+            print(f"\n{'='*60}")
+            print(f"🎉 SUCCESS! Cube in tray at {cube_final_pos}")
+            print(f"{'='*60}\n")
+            
+            # Save this successful trajectory
+            final_folder = os.path.join(base_save_dir, f"iter_{successful_iterations:04d}")
+            
+            # Rename temp folder to final folder
+            if os.path.exists(final_folder):
+                import shutil
+                shutil.rmtree(final_folder)
+            os.rename(temp_folder, final_folder)
+            
+            # Save state-action data
+            agent_pos = np.array(state_history)
+            actions = np.diff(agent_pos, axis=0)
+            actions = np.vstack([actions, np.zeros(13)])
+            cube_positions = np.array(cube_pos_history)
 
+            state_action_data = {
+                "agent_pos": agent_pos.tolist(),
+                "action": actions.tolist(),
+                "cube_pos": cube_positions.tolist(),
+                "num_frames": len(agent_pos),
+                "state_dim": 13,
+                "cube_dim": 7,
+                "success": True,
+                "attempt_number": total_attempts,
+                "success_number": successful_iterations,
+                "cube_start_pos": cube_start_pos,
+                "cube_final_pos": list(cube_final_pos),
+                "state_description": {
+                    "eef_pos": [0, 1, 2],
+                    "eef_orn": [3, 4, 5],
+                    "arm_joints": [6, 7, 8, 9, 10, 11],
+                    "gripper": [12],
+                },
+                "cube_description": {
+                    "position": [0, 1, 2],
+                    "orientation": [3, 4, 5, 6],
+                },
+            }
+
+            state_action_file = os.path.join(final_folder, "state_action.json")
+            with open(state_action_file, "w") as f:
+                json.dump(state_action_data, f, indent=2)
+
+            np.save(os.path.join(final_folder, "agent_pos.npy"), agent_pos)
+            np.save(os.path.join(final_folder, "actions.npy"), actions)
+            np.save(os.path.join(final_folder, "cube_pos.npy"), cube_positions)
+
+            np.savetxt(
+                os.path.join(final_folder, "agent_pos.txt"),
+                agent_pos,
+                fmt="%.6f",
+                delimiter=" ",
+                header="End-effector pose (x,y,z,roll,pitch,yaw) + 6 joint angles + gripper angle (13 dimensions)",
+            )
+            np.savetxt(
+                os.path.join(final_folder, "actions.txt"),
+                actions,
+                fmt="%.6f",
+                delimiter=" ",
+                header="Action deltas: differences between consecutive states (13 dimensions)",
+            )
+            np.savetxt(
+                os.path.join(final_folder, "cube_pos.txt"),
+                cube_positions,
+                fmt="%.6f",
+                delimiter=" ",
+                header="Cube position (x,y,z) + orientation quaternion (x,y,z,w) (7 dimensions)",
+            )
+
+            print(f"Saved successful trajectory to: {final_folder}")
+            print(f"  Frames captured: {frame_counter[0]}")
+            print(f"  Agent states shape: {agent_pos.shape}")
+            print(f"  Actions shape: {actions.shape}")
+            print(f"  Cube positions shape: {cube_positions.shape}")
+            
+            successful_iterations += 1
+            
+        else:
+            print(f"\n{'='*60}")
+            print(f"❌ FAILED - Cube missed tray, ended at {cube_final_pos}")
+            print(f"{'='*60}\n")
+            
+            # Delete temp folder for failed attempt
+            import shutil
+            if os.path.exists(temp_folder):
+                shutil.rmtree(temp_folder)
+            
+            failed_attempts += 1
 
         # Remove cube
         p.removeBody(cube_id)
+        
+        total_attempts += 1
 
-        # ============ SAVE AGENT STATES AND ACTIONS ============
-        agent_pos = np.array(state_history)
-        actions = np.diff(agent_pos, axis=0)
-        actions = np.vstack([actions, np.zeros(13)])
-        cube_positions = np.array(cube_pos_history)
+        # Print progress
+        print(f"\n{'='*60}")
+        print(f"PROGRESS UPDATE")
+        print(f"{'='*60}")
+        print(f"Total attempts: {total_attempts}")
+        print(f"Successful: {successful_iterations}/36 ({100*successful_iterations/36:.1f}%)")
+        print(f"Failed: {failed_attempts}")
+        print(f"Success rate: {100*successful_iterations/total_attempts:.1f}%")
+        print(f"Remaining: {36 - successful_iterations}")
+        print(f"{'='*60}\n")
 
-        state_action_data = {
-            "agent_pos": agent_pos.tolist(),
-            "action": actions.tolist(),
-            "cube_pos": cube_positions.tolist(),
-            "num_frames": len(agent_pos),
-            "state_dim": 13,
-            "cube_dim": 7,
-            "state_description": {
-                "eef_pos": [0, 1, 2],
-                "eef_orn": [3, 4, 5],
-                "arm_joints": [6, 7, 8, 9, 10, 11],
-                "gripper": [12],  # Gripper angle
-            },
-            "cube_description": {
-                "position": [0, 1, 2],  # Cube position (x, y, z)
-                "orientation": [3, 4, 5, 6],  # Cube orientation quaternion (x, y, z, w)
-            },
-        }
+    # Final summary
+    print("\n" + "="*60)
+    print("DATA COLLECTION COMPLETE!")
+    print("="*60)
+    print(f"Total attempts: {total_attempts}")
+    print(f"Successful trajectories saved: {successful_iterations}")
+    print(f"Failed attempts (discarded): {failed_attempts}")
+    print(f"Overall success rate: {100*successful_iterations/total_attempts:.1f}%")
+    print("="*60 + "\n")
 
-        state_action_file = os.path.join(iter_folder, "state_action.json")
-        with open(state_action_file, "w") as f:
-            json.dump(state_action_data, f, indent=2)
-
-        # Save as numpy arrays
-        np.save(os.path.join(iter_folder, "agent_pos.npy"), agent_pos)
-        np.save(os.path.join(iter_folder, "actions.npy"), actions)
-        np.save(os.path.join(iter_folder, "cube_pos.npy"), cube_positions)
-
-        # Save as text files
-        np.savetxt(
-            os.path.join(iter_folder, "agent_pos.txt"),
-            agent_pos,
-            fmt="%.6f",
-            delimiter=" ",
-            header="End-effector pose (x,y,z,roll,pitch,yaw) + 6 joint angles + gripper angle (13 dimensions)",
-        )
-        np.savetxt(
-            os.path.join(iter_folder, "actions.txt"),
-            actions,
-            fmt="%.6f",
-            delimiter=" ",
-            header="Action deltas: differences between consecutive states (13 dimensions)",
-        )
-        np.savetxt(
-            os.path.join(iter_folder, "cube_pos.txt"),
-            cube_positions,
-            fmt="%.6f",
-            delimiter=" ",
-            header="Cube position (x,y,z) + orientation quaternion (x,y,z,w) (7 dimensions)",
-        )
-
-        print(f"Completed iteration {iteration} - {frame_counter[0]} frames captured")
-        print(f"  Agent states shape: {agent_pos.shape}")
-        print(f"  Actions shape: {actions.shape}")
-        print(f"  Cube positions shape: {cube_positions.shape}")
-        iteration += 1
-
-        if(iteration >= 36):  # Limit to 1 iteration for testing
-            break
 
 
 def main():
@@ -889,7 +943,7 @@ def main():
     If excluding table from point clouds, set EXCLUDE_TABLE = True
     0r else False to include table in point clouds
     """
-    
+
     tray_pos, tray_orn, table_id, plane_id, tray_id = setup_simulation()
     robot = UR5Robotiq85([0, 0, 0.62], [0, 0, 0])
     robot.load()
