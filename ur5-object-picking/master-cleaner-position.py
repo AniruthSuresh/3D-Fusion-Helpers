@@ -182,8 +182,6 @@ class UR5Robotiq85:
                 [gripper_angle]
         ])
 
-        # Combine into single state vector
-        # [eef_pos (3), eef_orn_euler (3), arm_joints (6), gripper (1)] = 13 dimensions
         state = np.concatenate(
             [
                 eef_pos,  # 3D position (x, y, z)
@@ -192,8 +190,6 @@ class UR5Robotiq85:
                 [gripper_angle],  # 1 gripper angle
             ]
         )
-  
-
 
 
         return state
@@ -355,26 +351,25 @@ def update_simulation(
     cube_id=None,
     cube_pos_history=None,
     table_id=None,
-    capture_table=False,
+    plane_id=None,
+    EXCLUDE_TABLE = True,
 ):
-    """Update simulation and optionally capture frames from both cameras"""
+    """Update simulation and capture frames with table segmentation"""
 
     if capture_frames:
         dirs = create_data_folders(iter_folder)
 
-    # Third-person camera (fixed)
     tp_cam_eye = [1.1, -0.6, 1.3]
     tp_cam_target = [0.5, 0.3, 0.7]
     tp_cam_up = [0, 0, 1]
 
-    # Hide/show table during capture
-    if table_id is not None and capture_frames:
-        if capture_table:
-            # Show table
-            p.changeVisualShape(table_id, -1, rgbaColor=[1, 1, 1, 1])
-        else:
-            # Hide table by making it fully transparent
-            p.changeVisualShape(table_id, -1, rgbaColor=[1, 1, 1, 0])
+    # Create list of object IDs to exclude from point clouds
+    exclude_ids = []
+    if table_id is not None and EXCLUDE_TABLE:
+        exclude_ids.append(table_id)
+    if plane_id is not None:
+        exclude_ids.append(plane_id)
+
 
     for _ in range(steps):
         p.stepSimulation()
@@ -390,16 +385,37 @@ def update_simulation(
                 fov=60, aspect=1.0, nearVal=0.01, farVal=3.0
             )
 
-            # Capture third-person RGB and Depth
-            width, height, rgb_tp, depth_tp, _ = p.getCameraImage(
-                224, 224, viewMatrix=view_matrix_tp, projectionMatrix=proj_matrix
+            # Capture with segmentation mask
+            width, height, rgb_tp, depth_tp, seg_tp = p.getCameraImage(
+                224, 224, 
+                viewMatrix=view_matrix_tp, 
+                projectionMatrix=proj_matrix,
+                flags=p.ER_SEGMENTATION_MASK_OBJECT_AND_LINKINDEX
             )
 
             rgb_tp = np.array(rgb_tp)[:, :, :3]
             depth_buffer_tp = np.array(depth_tp)
+            seg_tp = np.array(seg_tp)
+            
+            # Create mask for objects to exclude
+            exclude_mask_tp = np.zeros_like(seg_tp, dtype=bool)
+            for obj_id in exclude_ids:
+                exclude_mask_tp |= (seg_tp == obj_id)
+            
             point_cloud_tp = depth_to_point_cloud(
                 depth_buffer_tp, view_matrix_tp, proj_matrix
             )
+
+            # --- APPLY FILTERS TO NPY DATA ---
+            points_tp_flat = point_cloud_tp.reshape(-1, 3)
+            # Filter 1: Depth threshold
+            valid_mask_tp = points_tp_flat[:, 2] < 2.5
+            # Filter 2: Segmentation exclusion (Table/Plane)
+            exclude_mask_flat_tp = exclude_mask_tp.flatten()
+            final_mask_tp = valid_mask_tp & (~exclude_mask_flat_tp)
+            
+            # Filtered point cloud for NPY
+            filtered_pcd_tp = points_tp_flat[final_mask_tp]
 
             # Save third-person data
             cv2.imwrite(
@@ -412,16 +428,22 @@ def update_simulation(
             )
             np.save(
                 os.path.join(dirs["tp_pcd"], f"tp_pcd_{frame_counter[0]:04d}.npy"),
-                point_cloud_tp,
+                filtered_pcd_tp, 
+            )
+            np.save(
+                os.path.join(dirs["tp_seg"], f"tp_seg_{frame_counter[0]:04d}.npy"),
+                seg_tp,
             )
 
-            # Flatten RGB and point cloud
+            # Save PLY with table removed
             colors_tp = rgb_tp.reshape(-1, 3)
             points_tp = point_cloud_tp.reshape(-1, 3)
+            exclude_mask_flat_tp = exclude_mask_tp.flatten()
+            
             ply_path_tp = os.path.join(
                 dirs["tp_pcd"], f"tp_pcd_{frame_counter[0]:04d}.ply"
             )
-            save_point_cloud_ply(points_tp, colors_tp, ply_path_tp)
+            save_point_cloud_ply(points_tp, colors_tp, ply_path_tp, exclude_mask_flat_tp)
 
             # ============ WRIST CAMERA ============
             wr_cam_pos, wr_cam_target, wr_cam_up = get_wrist_camera_params(robot)
@@ -432,16 +454,37 @@ def update_simulation(
                 cameraUpVector=wr_cam_up,
             )
 
-            # Capture wrist RGB and Depth
-            width, height, rgb_wr, depth_wr, _ = p.getCameraImage(
-                224, 224, viewMatrix=view_matrix_wr, projectionMatrix=proj_matrix
+            # Capture with segmentation mask
+            width, height, rgb_wr, depth_wr, seg_wr = p.getCameraImage(
+                224, 224, 
+                viewMatrix=view_matrix_wr, 
+                projectionMatrix=proj_matrix,
+                flags=p.ER_SEGMENTATION_MASK_OBJECT_AND_LINKINDEX
             )
 
             rgb_wr = np.array(rgb_wr)[:, :, :3]
             depth_buffer_wr = np.array(depth_wr)
+            seg_wr = np.array(seg_wr)
+            
+            # Create mask for objects to exclude
+            exclude_mask_wr = np.zeros_like(seg_wr, dtype=bool)
+            for obj_id in exclude_ids:
+                exclude_mask_wr |= (seg_wr == obj_id)
+            
             point_cloud_wr = depth_to_point_cloud(
                 depth_buffer_wr, view_matrix_wr, proj_matrix
             )
+
+            # --- APPLY FILTERS TO NPY DATA ---
+            points_wr_flat = point_cloud_wr.reshape(-1, 3)
+            # Filter 1: Depth threshold
+            valid_mask_wr = points_wr_flat[:, 2] < 2.5
+            # Filter 2: Segmentation exclusion
+            exclude_mask_flat_wr = exclude_mask_wr.flatten()
+            final_mask_wr = valid_mask_wr & (~exclude_mask_flat_wr)
+            
+            # Filtered point cloud for NPY
+            filtered_pcd_wr = points_wr_flat[final_mask_wr]
 
             # Save wrist data
             cv2.imwrite(
@@ -454,28 +497,32 @@ def update_simulation(
             )
             np.save(
                 os.path.join(dirs["wr_pcd"], f"wr_pcd_{frame_counter[0]:04d}.npy"),
-                point_cloud_wr,
+                filtered_pcd_wr, # Saved filtered N x 3 array
+            )
+            np.save(
+                os.path.join(dirs["wr_seg"], f"wr_seg_{frame_counter[0]:04d}.npy"),
+                seg_wr,
             )
 
+            # Save PLY with table removed
             colors_wr = rgb_wr.reshape(-1, 3)
             points_wr = point_cloud_wr.reshape(-1, 3)
+            exclude_mask_flat_wr = exclude_mask_wr.flatten()
+            
             ply_path_wr = os.path.join(
                 dirs["wr_pcd"], f"wr_pcd_{frame_counter[0]:04d}.ply"
             )
-            save_point_cloud_ply(points_wr, colors_wr, ply_path_wr)
+            save_point_cloud_ply(points_wr, colors_wr, ply_path_wr, exclude_mask_flat_wr)
 
             # ============ SAVE CAMERA POSES ============
-            # Calculate pose relative to robot base
             base_pos_array = np.array(base_pos)
 
-            # Third-person camera extrinsics (constant, relative to base)
             tp_cam_pos_base = np.array(tp_cam_eye) - base_pos_array
             tp_cam_target_base = np.array(tp_cam_target) - base_pos_array
             tp_extrinsics = compute_extrinsics(
                 tp_cam_pos_base, tp_cam_target_base, tp_cam_up
             )
 
-            # Wrist camera extrinsics (changes every frame, relative to base)
             wr_cam_pos_base = np.array(wr_cam_pos) - base_pos_array
             wr_cam_target_base = np.array(wr_cam_target) - base_pos_array
             wr_extrinsics = compute_extrinsics(
@@ -503,23 +550,14 @@ def update_simulation(
             if state_history is not None:
                 state_history.append(current_state)
 
+
             # ============ SAVE CUBE POSITION ============
             if cube_id is not None and cube_pos_history is not None:
                 cube_pos, cube_orn = p.getBasePositionAndOrientation(cube_id)
-                # Store position and orientation (quaternion)
-                cube_state = np.concatenate(
-                    [
-                        np.array(cube_pos),  # 3D position (x, y, z)
-                        np.array(cube_orn),  # 4D quaternion (x, y, z, w)
-                    ]
-                )
+                cube_state = np.concatenate([np.array(cube_pos), np.array(cube_orn)])
                 cube_pos_history.append(cube_state)
 
             frame_counter[0] += 1
-
-    # Restore table visibility after capture
-    if table_id is not None and capture_frames:
-        p.changeVisualShape(table_id, -1, rgbaColor=[1, 1, 1, 1])
 
 
 def save_point_cloud_ply(points, colors, filename):
@@ -545,19 +583,20 @@ def save_point_cloud_ply(points, colors, filename):
             f.write(f"{int(color[0])} {int(color[1])} {int(color[2])}\n")
 
 
-def setup_simulation(capture_table=False):
+def setup_simulation():
     p.connect(p.GUI)
     p.setGravity(0, 0, -9.8)
     p.setAdditionalSearchPath(pybullet_data.getDataPath())
-    if capture_table:
-        p.loadURDF("plane.urdf", [0, 0, 0], useMaximalCoordinates=True)
+    
+    plane_id = p.loadURDF("plane.urdf", [0, 0, 0], useMaximalCoordinates=True)
     table_id = p.loadURDF(
         "table/table.urdf", [0.5, 0, 0], p.getQuaternionFromEuler([0, 0, 0])
     )
     tray_pos = [0.5, 0.9, 0.6]
     tray_orn = p.getQuaternionFromEuler([0, 0, 0])
-    p.loadURDF("tray/tray.urdf", tray_pos, tray_orn)
-    return tray_pos, tray_orn, table_id
+    tray_id = p.loadURDF("tray/tray.urdf", tray_pos, tray_orn)
+    
+    return tray_pos, tray_orn, table_id, plane_id, tray_id
 
 
 def random_color_cube(cube_id):
@@ -566,7 +605,7 @@ def random_color_cube(cube_id):
 
 
 def move_and_grab_cube(
-    robot, tray_pos, table_id, base_save_dir="dataset", capture_table=False
+    robot, tray_pos, table_id, plane_id, tray_id, base_save_dir="dataset", EXCLUDE_TABLE=False
 ):
     iteration = 0
     while True:
@@ -591,12 +630,12 @@ def move_and_grab_cube(
             force=200
         )
         
-            
+        cube_id=None,
+
         # Step simulation to stabilize
         for _ in range(5000):
             p.stepSimulation()
 
-        
         update_simulation(
             200,
             capture_frames=False,
@@ -605,8 +644,11 @@ def move_and_grab_cube(
             robot=robot,
             base_pos=robot.base_pos,
             state_history=state_history,
+            cube_id = cube_id,
+            cube_pos_history = cube_pos_history,
             table_id=table_id,
-            capture_table=capture_table,
+            plane_id=plane_id,
+            EXCLUDE_TABLE = EXCLUDE_TABLE,
         )
 
         # Random cube
@@ -633,10 +675,12 @@ def move_and_grab_cube(
             robot=robot,
             base_pos=robot.base_pos,
             state_history=state_history,
-            cube_id=cube_id,
-            cube_pos_history=cube_pos_history,
+            cube_id = cube_id,
+            cube_pos_history = cube_pos_history,
             table_id=table_id,
-            capture_table=capture_table,
+            plane_id=plane_id,
+            EXCLUDE_TABLE = EXCLUDE_TABLE,
+
         )
 
         # Move down
@@ -649,16 +693,15 @@ def move_and_grab_cube(
             robot=robot,
             base_pos=robot.base_pos,
             state_history=state_history,
-            cube_id=cube_id,
-            cube_pos_history=cube_pos_history,
+            cube_id = cube_id,
+            cube_pos_history = cube_pos_history,
             table_id=table_id,
-            capture_table=capture_table,
+            plane_id=plane_id,
+            EXCLUDE_TABLE = EXCLUDE_TABLE,
         )
 
         # Close gripper
         robot.move_gripper(0.01)
-
-        print("Move grppiner 0.01 corresponds to fully closed gripper")
 
         update_simulation(
             25,
@@ -668,14 +711,23 @@ def move_and_grab_cube(
             robot=robot,
             base_pos=robot.base_pos,
             state_history=state_history,
-            cube_id=cube_id,
-            cube_pos_history=cube_pos_history,
+            cube_id = cube_id,
+            cube_pos_history = cube_pos_history,
             table_id=table_id,
-            capture_table=capture_table,
+            plane_id=plane_id,
+            EXCLUDE_TABLE = EXCLUDE_TABLE,
         )
+
+        locked_gripper_angle = p.getJointState(robot.id, robot.mimic_parent_id)[0]
+
 
         # Lift cube
         robot.move_arm_ik([cube_start_pos[0], cube_start_pos[1], 1.18], eef_orientation)
+        p.setJointMotorControl2(
+                robot.id, robot.mimic_parent_id, p.POSITION_CONTROL, 
+                targetPosition=locked_gripper_angle, force=200
+            )
+    
         update_simulation(
             50,
             capture_frames=True,
@@ -684,10 +736,11 @@ def move_and_grab_cube(
             robot=robot,
             base_pos=robot.base_pos,
             state_history=state_history,
-            cube_id=cube_id,
-            cube_pos_history=cube_pos_history,
+            cube_id = cube_id,
+            cube_pos_history = cube_pos_history,
             table_id=table_id,
-            capture_table=capture_table,
+            plane_id=plane_id,
+            EXCLUDE_TABLE = EXCLUDE_TABLE,
         )
 
         # Move above tray
@@ -696,6 +749,11 @@ def move_and_grab_cube(
             [tray_pos[0] + tray_offset, tray_pos[1] + tray_offset, tray_pos[2] + 0.56],
             eef_orientation,
         )
+        p.setJointMotorControl2(
+                robot.id, robot.mimic_parent_id, p.POSITION_CONTROL, 
+                targetPosition=locked_gripper_angle, force=200
+            )
+        
         update_simulation(
             150,
             capture_frames=True,
@@ -704,10 +762,11 @@ def move_and_grab_cube(
             robot=robot,
             base_pos=robot.base_pos,
             state_history=state_history,
-            cube_id=cube_id,
-            cube_pos_history=cube_pos_history,
+            cube_id = cube_id,
+            cube_pos_history = cube_pos_history,
             table_id=table_id,
-            capture_table=capture_table,
+            plane_id=plane_id,
+            EXCLUDE_TABLE = EXCLUDE_TABLE,
         )
 
         # Open gripper
@@ -720,10 +779,11 @@ def move_and_grab_cube(
             robot=robot,
             base_pos=robot.base_pos,
             state_history=state_history,
-            cube_id=cube_id,
-            cube_pos_history=cube_pos_history,
+            cube_id = cube_id,
+            cube_pos_history = cube_pos_history,
             table_id=table_id,
-            capture_table=capture_table,
+            plane_id=plane_id,
+            EXCLUDE_TABLE = EXCLUDE_TABLE,
         )
 
         # Remove cube
@@ -804,13 +864,12 @@ def move_and_grab_cube(
 
 
 def main():
-    CAPTURE_TABLE = False  # Set to True to capture table in data
-    tray_pos, tray_orn, table_id = setup_simulation(CAPTURE_TABLE)
+    EXCLUDE_TABLE = True
+    tray_pos, tray_orn, table_id, plane_id, tray_id = setup_simulation()
     robot = UR5Robotiq85([0, 0, 0.62], [0, 0, 0])
     robot.load()
-    # Set capture_table=False to hide table during data capture (default)
-    # Set capture_table=True to show table during data capture
-    move_and_grab_cube(robot, tray_pos, table_id, capture_table=CAPTURE_TABLE)
+
+    move_and_grab_cube(robot, tray_pos, table_id, plane_id, tray_id , EXCLUDE_TABLE = EXCLUDE_TABLE)
 
 
 if __name__ == "__main__":
