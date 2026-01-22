@@ -179,29 +179,30 @@ class UR5Robotiq85:
         return eef_state
 
     def get_robot_state(self):
-        """Get complete robot state: end-effector pose + joint angles"""
-        eef_state = p.getLinkState(self.id, self.eef_id)
-        eef_pos = np.array(eef_state[0])
-        eef_orn_quat = np.array(eef_state[1])
-        eef_orn_euler = np.array(p.getEulerFromQuaternion(eef_orn_quat))
+            """Get complete robot state with normalized gripper [0, 1]"""
+            eef_state = p.getLinkState(self.id, self.eef_id)
+            eef_pos = np.array(eef_state[0])
+            eef_orn_quat = np.array(eef_state[1])
+            eef_orn_euler = np.array(p.getEulerFromQuaternion(eef_orn_quat))
 
-        joint_states = []
-        for joint_id in self.arm_controllable_joints:
-            joint_state = p.getJointState(self.id, joint_id)
-            joint_states.append(joint_state[0])
+            joint_states = [p.getJointState(self.id, i)[0] for i in self.arm_controllable_joints]
 
-        gripper_state = p.getJointState(self.id, self.mimic_parent_id)
-        gripper_angle = gripper_state[0]
+            # Get raw gripper angle
+            raw_gripper_angle = p.getJointState(self.id, self.mimic_parent_id)[0]
 
-        # 1. Apply threshold: if less than 1e-3, set to 0
-        if abs(gripper_angle) < 1e-3:
-            gripper_angle = 0.0
+            # 1. Apply noise threshold
+            if abs(raw_gripper_angle) < 1e-3:
+                raw_gripper_angle = 0.0
 
+            # 2. Cap at 0.38 and Normalize to [0, 1]
+            # Calculation: normalized = min(raw, 0.38) / 0.38
+            normalized_gripper = min(raw_gripper_angle, 0.38) / 0.38
 
-        print(f"Gripper angle : {gripper_angle}")
-        state = np.concatenate([eef_pos, eef_orn_euler, joint_states, [gripper_angle]])
-        return state
-    
+            print(f"Gripper: Raw={raw_gripper_angle:.4f} | Normalized={normalized_gripper:.4f}")
+            
+            state = np.concatenate([eef_pos, eef_orn_euler, joint_states, [normalized_gripper]])
+            return state
+        
 
 
 def interpolate_gripper(robot, target_angle, steps=60, 
