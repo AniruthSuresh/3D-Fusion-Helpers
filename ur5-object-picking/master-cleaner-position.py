@@ -196,26 +196,27 @@ class UR5Robotiq85:
 
 
 def create_data_folders(iter_folder):
-    # Third person camera folders
     tp_rgb_dir = os.path.join(iter_folder, "third_person", "rgb")
     tp_depth_dir = os.path.join(iter_folder, "third_person", "depth")
     tp_pcd_dir = os.path.join(iter_folder, "third_person", "pcd")
+    tp_seg_dir = os.path.join(iter_folder, "third_person", "segmentation")
 
-    # Wrist camera folders
     wr_rgb_dir = os.path.join(iter_folder, "wrist", "rgb")
     wr_depth_dir = os.path.join(iter_folder, "wrist", "depth")
     wr_pcd_dir = os.path.join(iter_folder, "wrist", "pcd")
+    wr_seg_dir = os.path.join(iter_folder, "wrist", "segmentation")
 
-    # Camera poses folder
     poses_dir = os.path.join(iter_folder, "camera_poses")
 
     os.makedirs(tp_rgb_dir, exist_ok=True)
     os.makedirs(tp_depth_dir, exist_ok=True)
     os.makedirs(tp_pcd_dir, exist_ok=True)
+    os.makedirs(tp_seg_dir, exist_ok=True)
 
     os.makedirs(wr_rgb_dir, exist_ok=True)
     os.makedirs(wr_depth_dir, exist_ok=True)
     os.makedirs(wr_pcd_dir, exist_ok=True)
+    os.makedirs(wr_seg_dir, exist_ok=True)
 
     os.makedirs(poses_dir, exist_ok=True)
 
@@ -223,9 +224,11 @@ def create_data_folders(iter_folder):
         "tp_rgb": tp_rgb_dir,
         "tp_depth": tp_depth_dir,
         "tp_pcd": tp_pcd_dir,
+        "tp_seg": tp_seg_dir,
         "wr_rgb": wr_rgb_dir,
         "wr_depth": wr_depth_dir,
         "wr_pcd": wr_pcd_dir,
+        "wr_seg": wr_seg_dir,
         "poses": poses_dir,
     }
 
