@@ -21,8 +21,8 @@ def plot_gripper_data(folder_path):
 
     # Define Phase Regions (Based on your simulation steps)
     # Move(50) + Down(50) = 100. Close(25). Lift(50) + MoveTray(150) = 325. Open(25).
-    close_region = (100, 125)
-    open_region = (325, len(gripper_state))
+    close_region = (100, 150)
+    open_region = (350, len(gripper_state))
 
     # Create Plot (2 rows, 1 column)
     fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 10), sharex=True)
@@ -38,7 +38,6 @@ def plot_gripper_data(folder_path):
     highlight_phases(ax1)
     ax1.set_title("Robot State: Gripper Joint Angle", fontsize=14)
     ax1.set_ylabel("Normalized Position")
-    ax1.set_ylim(-0.1, 1.1)
     ax1.grid(True, linestyle=':', alpha=0.6)
     ax1.legend(loc='upper left')
 
@@ -47,14 +46,15 @@ def plot_gripper_data(folder_path):
     highlight_phases(ax2)
     ax2.set_title("Robot Action: Gripper Command Mapping", fontsize=14)
     ax2.set_xlabel("Frame Index", fontsize=12)
-    ax2.set_ylabel("Action Value (-1, 0, 1)")
-    ax2.set_ylim(-1.5, 1.5)
-    ax2.set_yticks([-1, 0, 1])
+    ax2.set_ylabel("Action Value")
     ax2.grid(True, linestyle=':', alpha=0.6)
     ax2.legend(loc='upper left')
 
     plt.tight_layout(rect=[0, 0.03, 1, 0.95])
     plt.show()
+
+
+    plt.savefig(os.path.join(folder_path, "gripper_phase_analysis.png"))
 
 if __name__ == "__main__":
     # Update this path to your specific dataset folder
