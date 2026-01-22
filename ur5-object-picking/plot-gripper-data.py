@@ -54,7 +54,7 @@ def plot_gripper_data(folder_path):
     plt.show()
 
 
-    plt.savefig(os.path.join(folder_path, "gripper_phase_analysis.png"))
+    plt.savefig("gripper_phase_analysis.png")
 
 if __name__ == "__main__":
     # Update this path to your specific dataset folder
