@@ -619,12 +619,9 @@ def save_point_cloud_ply(points, colors, filename, exclude_mask=None):
 
 
 def setup_simulation():
-    try:
-        cid = p.connect(p.GUI)
-        print("PyBullet GUI connected")
-    except Exception:
-        cid = p.connect(p.DIRECT)
-        print("PyBullet running in DIRECT (headless) mode")
+
+    p.connect(p.DIRECT)
+    print("PyBullet running in DIRECT (headless) mode")
 
     p.setGravity(0, 0, -9.8)
     p.setAdditionalSearchPath(pybullet_data.getDataPath())
