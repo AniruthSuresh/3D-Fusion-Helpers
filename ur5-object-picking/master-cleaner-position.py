@@ -563,9 +563,15 @@ def update_simulation(
             frame_counter[0] += 1
 
 
-def save_point_cloud_ply(points, colors, filename):
-    """Save point cloud in PLY format with colors"""
+def save_point_cloud_ply(points, colors, filename, exclude_mask=None):
+    """Save point cloud in PLY format with colors, excluding masked points"""
+    # Apply depth filter
     valid_mask = points[:, 2] < 2.5
+    
+    # Apply exclude mask if provided
+    if exclude_mask is not None:
+        valid_mask = valid_mask & (~exclude_mask)
+    
     points = points[valid_mask]
     colors = colors[valid_mask]
 
@@ -584,6 +590,7 @@ def save_point_cloud_ply(points, colors, filename):
         for point, color in zip(points, colors):
             f.write(f"{point[0]:.6f} {point[1]:.6f} {point[2]:.6f} ")
             f.write(f"{int(color[0])} {int(color[1])} {int(color[2])}\n")
+
 
 
 def setup_simulation():
