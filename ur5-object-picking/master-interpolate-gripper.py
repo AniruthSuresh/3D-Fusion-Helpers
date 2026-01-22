@@ -147,31 +147,31 @@ class UR5Robotiq85:
             open_angle: Target angle for finger_joint (0 = open, 0.8 = closed)
         """
         # Control the parent joint AND all mimic children explicitly
-        p.setJointMotorControl2(
-            self.id, 
-            self.mimic_parent_id, 
-            p.POSITION_CONTROL, 
-            targetPosition=open_angle,
-            force=500,
-            maxVelocity=1.0
-        )
+        # p.setJointMotorControl2(
+        #     self.id, 
+        #     self.mimic_parent_id, 
+        #     p.POSITION_CONTROL, 
+        #     targetPosition=open_angle,
+        #     force=500,
+        #     maxVelocity=1.0
+        # )
         
-        # Also control mimic children to help stabilize
-        for joint_id, multiplier in self.mimic_child_multiplier.items():
-            target = open_angle * multiplier
-            p.setJointMotorControl2(
-                self.id,
-                joint_id,
-                p.POSITION_CONTROL,
-                targetPosition=target,
-                force=500,
-                maxVelocity=1.0
-            )
+        # # Also control mimic children to help stabilize
+        # for joint_id, multiplier in self.mimic_child_multiplier.items():
+        #     target = open_angle * multiplier
+        #     p.setJointMotorControl2(
+        #         self.id,
+        #         joint_id,
+        #         p.POSITION_CONTROL,
+        #         targetPosition=target,
+        #         force=500,
+        #         maxVelocity=1.0
+        #     )
         
-        # p.resetJointState(robot.id, robot.mimic_parent_id, interpolated_angle)
+        p.resetJointState(self.id, self.mimic_parent_id, open_angle)
 
-        # for joint_id, multiplier in robot.mimic_child_multiplier.items():
-        #     p.resetJointState(robot.id, joint_id, interpolated_angle * multiplier)
+        for joint_id, multiplier in self.mimic_child_multiplier.items():
+            p.resetJointState(self.id, joint_id, open_angle * multiplier)
 
 
     def get_current_ee_position(self):
@@ -233,16 +233,16 @@ def interpolate_gripper(robot, target_angle, steps=60,
         
 
         # CRITICAL: Also control all mimic children joints explicitly
-        # for joint_id, multiplier in robot.mimic_child_multiplier.items():
-        #     child_target = interpolated_angle * multiplier
-        #     p.setJointMotorControl2(
-        #         robot.id,
-        #         joint_id,
-        #         p.POSITION_CONTROL,
-        #         targetPosition=child_target,
-        #         force=500,
-        #         maxVelocity=1.0
-        #     )
+        for joint_id, multiplier in robot.mimic_child_multiplier.items():
+            child_target = interpolated_angle * multiplier
+            p.setJointMotorControl2(
+                robot.id,
+                joint_id,
+                p.POSITION_CONTROL,
+                targetPosition=child_target,
+                force=1500,
+                maxVelocity=1.0
+            )
         
         # Step simulation - use moderate number of steps
         for _ in range(50):
@@ -674,9 +674,9 @@ def move_and_grab_cube(robot, tray_pos, table_id, plane_id, tray_id, EXCLUDE_TAB
         # Force gripper to reset
         print("Resetting gripper...")
 
-        # p.resetJointState(robot.id, robot.mimic_parent_id, 0)
-        # for joint_id, multiplier in robot.mimic_child_multiplier.items():
-        #     p.resetJointState(robot.id, joint_id, 0)
+        p.resetJointState(robot.id, robot.mimic_parent_id, 0)
+        for joint_id, multiplier in robot.mimic_child_multiplier.items():
+            p.resetJointState(robot.id, joint_id, 0)
     
         p.setJointMotorControl2(
             robot.id, 
@@ -688,7 +688,6 @@ def move_and_grab_cube(robot, tray_pos, table_id, plane_id, tray_id, EXCLUDE_TAB
         )
 
         
-    
         for _ in range(5000):
             p.stepSimulation()
 
