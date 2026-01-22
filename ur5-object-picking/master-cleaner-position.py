@@ -202,7 +202,7 @@ class UR5Robotiq85:
             # Calculation: normalized = min(raw, 0.35) / 0.35
             normalized_gripper = min(raw_gripper_angle, 0.35) / 0.35
 
-            print(f"Gripper: Raw={raw_gripper_angle:.4f} | Normalized={normalized_gripper:.4f}")
+            # print(f"Gripper: Raw={raw_gripper_angle:.4f} | Normalized={normalized_gripper:.4f}")
             
             state = np.concatenate([eef_pos, eef_orn_euler, joint_states, [normalized_gripper]])
             return state
@@ -220,14 +220,14 @@ def interpolate_gripper(robot, target_angle, steps=60,
     current_gripper_state = p.getJointState(robot.id, robot.mimic_parent_id)
     current_angle = current_gripper_state[0]
 
-    print(f"\nInterpolating gripper from {current_angle:.4f} to {target_angle:.4f}")
+    # print(f"\nInterpolating gripper from {current_angle:.4f} to {target_angle:.4f}")
 
     # Interpolate between current and target angle
     for i in range(steps):
         alpha = (i + 1) / steps  # Linear interpolation factor
         interpolated_angle = current_angle + alpha * (target_angle - current_angle)
         
-        print(f"Step {i+1}/{steps}: Target {interpolated_angle:.4f}", end=" -> ")
+        # print(f"Step {i+1}/{steps}: Target {interpolated_angle:.4f}", end=" -> ")
         
         # Control parent joint
         p.setJointMotorControl2(
