@@ -193,6 +193,9 @@ class UR5Robotiq85:
         gripper_state = p.getJointState(self.id, self.mimic_parent_id)
         gripper_angle = gripper_state[0]
 
+        # 1. Apply threshold: if less than 1e-3, set to 0
+        if abs(gripper_angle) < 1e-3:
+            gripper_angle = 0.0
 
 
         print(f"Gripper angle : {gripper_angle}")

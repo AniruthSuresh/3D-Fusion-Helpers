@@ -728,16 +728,20 @@ def move_and_grab_cube(
             EXCLUDE_TABLE = EXCLUDE_TABLE,
         )
 
+        
         locked_gripper_angle = p.getJointState(robot.id, robot.mimic_parent_id)[0]
-
-
+        print(f"Gripper closed - locked angle: {locked_gripper_angle:.4f}")
+        
         # Lift cube
         robot.move_arm_ik([cube_start_pos[0], cube_start_pos[1], 1.18], eef_orientation)
-        p.setJointMotorControl2(
-                robot.id, robot.mimic_parent_id, p.POSITION_CONTROL, 
-                targetPosition=locked_gripper_angle, force=200
-            )
+        # p.setJointMotorControl2(
+        #         robot.id, robot.mimic_parent_id, p.POSITION_CONTROL, 
+        #         targetPosition=locked_gripper_angle, force=200
+        #     )
     
+        p.resetJointState(robot.id, robot.mimic_parent_id, locked_gripper_angle)
+
+
         update_simulation(
             50,
             capture_frames=True,
@@ -759,11 +763,13 @@ def move_and_grab_cube(
             [tray_pos[0] + tray_offset, tray_pos[1] + tray_offset, tray_pos[2] + 0.56],
             eef_orientation,
         )
-        p.setJointMotorControl2(
-                robot.id, robot.mimic_parent_id, p.POSITION_CONTROL, 
-                targetPosition=locked_gripper_angle, force=200
-            )
+        # p.setJointMotorControl2(
+        #         robot.id, robot.mimic_parent_id, p.POSITION_CONTROL, 
+        #         targetPosition=locked_gripper_angle, force=200
+        #     )
         
+        p.resetJointState(robot.id, robot.mimic_parent_id, locked_gripper_angle)
+
         update_simulation(
             150,
             capture_frames=True,
