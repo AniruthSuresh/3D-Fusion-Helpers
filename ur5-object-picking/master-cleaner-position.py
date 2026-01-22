@@ -675,24 +675,37 @@ def move_and_grab_cube(robot, tray_pos, table_id, plane_id, tray_id, EXCLUDE_TAB
                 robot.id, joint_id, p.POSITION_CONTROL, target_joint_positions[i]
             )
 
+        # --- UPDATE THIS SECTION IN move_and_grab_cube ---
+
         # Force gripper to reset
         print("Resetting gripper...")
 
+        # 1. Teleport the physical state to 0
         p.resetJointState(robot.id, robot.mimic_parent_id, 0)
         for joint_id, multiplier in robot.mimic_child_multiplier.items():
             p.resetJointState(robot.id, joint_id, 0)
-    
+
+        # 2. CRITICAL: Reset the motor control target to 0
+        # Without this, the motor will fight the reset and move back to 0.2
         p.setJointMotorControl2(
             robot.id, 
             robot.mimic_parent_id, 
             p.POSITION_CONTROL, 
-            targetPosition=0.000,
-            force=1500,
-            maxVelocity=1.5
+            targetPosition=0, # Command it to stay at 0
+            force=1500
         )
 
+        # Also reset child motor targets
+        for joint_id, multiplier in robot.mimic_child_multiplier.items():
+            p.setJointMotorControl2(
+                robot.id,
+                joint_id,
+                p.POSITION_CONTROL,
+                targetPosition=0,
+                force=1500
+            )
         
-        for _ in range(5000):
+        for _ in range(500):
             p.stepSimulation()
 
         actual_angle = p.getJointState(robot.id, robot.mimic_parent_id)[0]
