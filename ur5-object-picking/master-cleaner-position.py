@@ -152,10 +152,10 @@ class UR5Robotiq85:
         #     self.mimic_parent_id, 
         #     p.POSITION_CONTROL, 
         #     targetPosition=open_angle,
-        #     force=500,
+        #     force=1500,
         #     maxVelocity=1.0
         # )
-        
+        # # 
         # # Also control mimic children to help stabilize
         # for joint_id, multiplier in self.mimic_child_multiplier.items():
         #     target = open_angle * multiplier
@@ -164,14 +164,18 @@ class UR5Robotiq85:
         #         joint_id,
         #         p.POSITION_CONTROL,
         #         targetPosition=target,
-        #         force=500,
+        #         force=1500,
         #         maxVelocity=1.0
         #     )
         
         p.resetJointState(self.id, self.mimic_parent_id, open_angle)
+ 
 
         for joint_id, multiplier in self.mimic_child_multiplier.items():
             p.resetJointState(self.id, joint_id, open_angle * multiplier)
+ 
+        for _ in range(10):
+            p.stepSimulation()
 
 
     def get_current_ee_position(self):
@@ -194,9 +198,9 @@ class UR5Robotiq85:
             if abs(raw_gripper_angle) < 1e-3:
                 raw_gripper_angle = 0.0
 
-            # 2. Cap at 0.38 and Normalize to [0, 1]
-            # Calculation: normalized = min(raw, 0.38) / 0.38
-            normalized_gripper = min(raw_gripper_angle, 0.38) / 0.38
+            # 2. Cap at 0.35 and Normalize to [0, 1]
+            # Calculation: normalized = min(raw, 0.35) / 0.35
+            normalized_gripper = min(raw_gripper_angle, 0.35) / 0.35
 
             print(f"Gripper: Raw={raw_gripper_angle:.4f} | Normalized={normalized_gripper:.4f}")
             
@@ -248,8 +252,7 @@ def interpolate_gripper(robot, target_angle, steps=60,
                 maxVelocity=1.0
             )
         
-        # Step simulation - use moderate number of steps
-        for _ in range(50):
+        for _ in range(200):
             p.stepSimulation()
 
 
@@ -418,9 +421,6 @@ def update_simulation(
         # print("Excluding plane from point clouds with {}".format(plane_id))
         exclude_ids.append(plane_id)
 
-    # if tray_id is not None:
-    #     print("Excluding tray from point clouds with {}".format(tray_id))
-    #     exclude_ids.append(tray_id)
 
     for _ in range(steps):
         p.stepSimulation()
@@ -765,7 +765,7 @@ def move_and_grab_cube(robot, tray_pos, table_id, plane_id, tray_id, EXCLUDE_TAB
         # Phase 3: Close gripper
         print("Phase 3: Closing gripper...")
         interpolate_gripper(
-            robot, target_angle=0.4, steps=50,
+            robot, target_angle=0.50, steps=50,
             capture_frames=True, iter_folder=temp_folder,
             frame_counter=frame_counter, base_pos=robot.base_pos,
             state_history=state_history, cube_id=cube_id,
