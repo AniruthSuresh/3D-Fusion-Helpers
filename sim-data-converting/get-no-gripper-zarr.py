@@ -24,107 +24,99 @@ def restructure_single_camera(old_zarr_path, new_zarr_path, episode_ends,
                               img_key='img', pc_key='point_cloud', 
                               extrinsics_key=None, camera_name='default'):
     """
-    Restructure zarr for a single camera view, stripping gripper and EEF pose.
+    Restructure zarr by reading from data/ group and stripping the 7th dimension.
     """
     # Open old zarr
     print(f"\nOpening old zarr: {old_zarr_path}")
     old_root = zarr.open(old_zarr_path, mode='r')
     
-    print(f"\nOld structure for {camera_name}:")
-    print(old_root.tree())
+    # Check if the structure is flat or nested
+    if 'data' in old_root:
+        src = old_root['data']
+        print("Detected nested 'data/' structure in source.")
+    else:
+        src = old_root
+        print("Detected flat structure in source.")
     
     # Create new zarr
-    print(f"\nCreating new zarr: {new_zarr_path}")
+    print(f"Creating new zarr: {new_zarr_path}")
     if os.path.exists(new_zarr_path):
-        print(f"WARNING: {new_zarr_path} already exists. Removing...")
         shutil.rmtree(new_zarr_path)
     
     new_root = zarr.open(new_zarr_path, mode='w')
-    
-    # Create groups
     data_group = new_root.create_group('data')
     meta_group = new_root.create_group('meta')
     
-    print("\nCopying arrays and stripping dimensions...")
+    print("\nProcessing and Trimming Arrays...")
     
-    # --- COPY STATES (Remove first 6 and the 13th) ---
-    print("  states → data/state (Keeping only 6 joint dims)")
-    old_states = old_root['states']
-    # Index 6 to 11 (6 columns total)
-    states_trimmed = old_states[:, 6:12]
-    
-    new_state_chunks = list(old_states.chunks) if old_states.chunks else [old_states.shape[0]]
-    if len(new_state_chunks) > 1:
-        new_state_chunks[1] = states_trimmed.shape[1]
+    # --- PROCESS STATE ---
+    # Your source is (13140, 7). We take indices 0-5 to get 6-DoF.
+    state_key = 'state' if 'state' in src else 'states'
+    old_states = src[state_key]
+    states_trimmed = old_states[:, :6] 
     
     data_group.create_dataset(
         'state',
         data=states_trimmed,
-        chunks=tuple(new_state_chunks),
+        chunks=(old_states.chunks[0], 6) if old_states.chunks else None,
         dtype=old_states.dtype,
         compressor=old_states.compressor
     )
-    print(f"    original={old_states.shape}, new={states_trimmed.shape}")
-    print(f"    removed: eef_pos(3), eef_orn(3), AND gripper(1)")
+    print(f"  state: {old_states.shape} -> {states_trimmed.shape} (Gripper removed)")
     
-    # --- COPY ACTIONS (Remove first 6 and the 13th) ---
-    print("  actions → data/action (Keeping only 6 joint deltas)")
-    old_actions = old_root['actions']
-    actions_trimmed = old_actions[:, 6:12]
-    
-    new_action_chunks = list(old_actions.chunks) if old_actions.chunks else [old_actions.shape[0]]
-    if len(new_action_chunks) > 1:
-        new_action_chunks[1] = actions_trimmed.shape[1]
+    # --- PROCESS ACTION ---
+    action_key = 'action' if 'action' in src else 'actions'
+    old_actions = src[action_key]
+    actions_trimmed = old_actions[:, :6]
     
     data_group.create_dataset(
         'action',
         data=actions_trimmed,
-        chunks=tuple(new_action_chunks),
+        chunks=(old_actions.chunks[0], 6) if old_actions.chunks else None,
         dtype=old_actions.dtype,
         compressor=old_actions.compressor
     )
-    print(f"    original={old_actions.shape}, new={actions_trimmed.shape}")
+    print(f"  action: {old_actions.shape} -> {actions_trimmed.shape} (Gripper removed)")
     
-    # --- POINT CLOUD ---
-    print(f"  {pc_key} → data/point_cloud")
-    old_pc = old_root[pc_key]
-    data_group.create_dataset(
-        'point_cloud', data=old_pc[:], chunks=old_pc.chunks,
-        dtype=old_pc.dtype, compressor=old_pc.compressor
-    )
+    # --- COPY OTHER DATA ---
+    # Point Cloud
+    if pc_key in src:
+        old_pc = src[pc_key]
+        data_group.create_dataset('point_cloud', data=old_pc[:], chunks=old_pc.chunks, 
+                                  dtype=old_pc.dtype, compressor=old_pc.compressor)
     
-    # --- IMAGE ---
-    print(f"  {img_key} → data/img")
-    old_img = old_root[img_key]
-    data_group.create_dataset(
-        'img', data=old_img[:], chunks=old_img.chunks,
-        dtype=old_img.dtype, compressor=old_img.compressor
-    )
+    # Image
+    if img_key in src:
+        old_img = src[img_key]
+        data_group.create_dataset('img', data=old_img[:], chunks=old_img.chunks, 
+                                  dtype=old_img.dtype, compressor=old_img.compressor)
     
-    # --- CUBE POS ---
-    if 'cube_pos' in old_root:
-        print("  cube_pos → data/cube_pos")
-        old_cube = old_root['cube_pos']
-        data_group.create_dataset('cube_pos', data=old_cube[:], chunks=old_cube.chunks)
+    # Cube Position
+    if 'cube_pos' in src:
+        data_group.create_dataset('cube_pos', data=src['cube_pos'][:], chunks=src['cube_pos'].chunks)
 
-    # --- EXTRINSICS ---
-    if extrinsics_key and extrinsics_key in old_root:
-        print(f"  {extrinsics_key} → data/camera_extrinsics")
-        data_group.create_dataset('camera_extrinsics', data=old_root[extrinsics_key][:])
-    
+    # Extrinsics
+    if extrinsics_key and extrinsics_key in src:
+        data_group.create_dataset('camera_extrinsics', data=src[extrinsics_key][:])
+
     # --- METADATA ---
-    print("  episode_ends.npy → meta/episode_ends")
     meta_group.create_dataset('episode_ends', data=episode_ends, dtype=np.int64)
     
-    # Attributes
     new_root.attrs['camera_view'] = camera_name
     new_root.attrs['num_episodes'] = len(episode_ends)
     new_root.attrs['total_frames'] = int(episode_ends[-1])
     new_root.attrs['state_dim'] = 6
     new_root.attrs['action_dim'] = 6
-    new_root.attrs['state_description'] = '6 joint angles only (gripper removed)'
-    new_root.attrs['action_description'] = '6 joint deltas only (gripper removed)'
     
+    print("\n" + "=" * 60)
+    print("DATASET SUMMARY:")
+    print("=" * 60)
+    print(f"Final State Shape:  {data_group['state'].shape}")
+    print(f"Final Action Shape: {data_group['action'].shape}")
+    print(f"Total Episodes:     {len(episode_ends)}")
+    print(f"Validation:         {'✓ Match' if states_trimmed.shape[0] == episode_ends[-1] else '✗ Mismatch'}")
+    print("=" * 60)
+
     # Summary Table Output
     print("\n" + "=" * 60)
     print("FINAL 6-DOF ZARR STRUCTURE:")
