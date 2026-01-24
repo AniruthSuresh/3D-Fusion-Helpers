@@ -19,11 +19,6 @@ class UR5Robotiq85:
         self.arm_rest_poses = [-1.57, -1.54, 1.34, -1.37, -1.57, 0.0]
         self.gripper_range = [0, 0.085]
         self.max_velocity = 3
-        self.current_gripper_velocity = 0.0  # Track current gripper velocity command
-
-        
-        self.gripper_angle_override = None
-        self.GRIPPER_NORM_LIMIT = 0.2
 
     def load(self):
         self.id = p.loadURDF(
@@ -87,6 +82,7 @@ class UR5Robotiq85:
         ]
 
     def __setup_mimic_joints__(self):
+        """Setup mimic joints for Robotiq gripper"""
         mimic_parent_name = "finger_joint"
         mimic_children_names = {
             "right_outer_knuckle_joint": 1,
@@ -95,14 +91,20 @@ class UR5Robotiq85:
             "left_inner_finger_joint": -1,
             "right_inner_finger_joint": -1,
         }
+        
+        # Find parent joint ID
         self.mimic_parent_id = [
             joint.id for joint in self.joints if joint.name == mimic_parent_name
         ][0]
+        
+        # Store child joint info
         self.mimic_child_multiplier = {
             joint.id: mimic_children_names[joint.name]
             for joint in self.joints
             if joint.name in mimic_children_names
         }
+        
+        # Create constraints with MUCH stronger force
         for joint_id, multiplier in self.mimic_child_multiplier.items():
             c = p.createConstraint(
                 self.id,
@@ -114,7 +116,8 @@ class UR5Robotiq85:
                 parentFramePosition=[0, 0, 0],
                 childFramePosition=[0, 0, 0],
             )
-            p.changeConstraint(c, gearRatio=-multiplier, maxForce=100, erp=1)
+            # CRITICAL: High maxForce and erp=1 for stiff constraints
+            p.changeConstraint(c, gearRatio=-multiplier, maxForce=100000, erp=1)
 
     def move_arm_ik(self, target_pos, target_orn):
         joint_poses = p.calculateInverseKinematics(
@@ -136,65 +139,143 @@ class UR5Robotiq85:
                 maxVelocity=self.max_velocity,
             )
 
-    def move_gripper(self, velocity_command):
+    def move_gripper(self, open_angle):
         """
-        Velocity-based gripper control.
+        Move gripper to target angle.
         
         Args:
-            velocity_command: Control input for gripper velocity
-                -1.0: Open gripper (maximum opening velocity)
-                 0.0: Hold current state (stop movement)
-                 1.0: Close gripper (maximum closing velocity)
+            open_angle: Target angle for finger_joint (0 = open, 0.8 = closed)
         """
-        # Store the velocity command
-        self.current_gripper_velocity = velocity_command
+        # Control the parent joint AND all mimic children explicitly
+        # p.setJointMotorControl2(
+        #     self.id, 
+        #     self.mimic_parent_id, 
+        #     p.POSITION_CONTROL, 
+        #     targetPosition=open_angle,
+        #     force=1500,
+        #     maxVelocity=1.0
+        # )
+        # # 
+        # # Also control mimic children to help stabilize
+        # for joint_id, multiplier in self.mimic_child_multiplier.items():
+        #     target = open_angle * multiplier
+        #     p.setJointMotorControl2(
+        #         self.id,
+        #         joint_id,
+        #         p.POSITION_CONTROL,
+        #         targetPosition=target,
+        #         force=1500,
+        #         maxVelocity=1.0
+        #     )
         
-        # Map command to actual velocity (-1=open, 0=hold, 1=close)
-        max_velocity = 20.0  # Maximum gripper velocity
-        target_velocity = velocity_command * max_velocity
-        
-        p.setJointMotorControl2(
-            self.id, 
-            self.mimic_parent_id, 
-            p.VELOCITY_CONTROL,
-            targetVelocity=target_velocity,
-            force=100  # High force for reliable movement
-        )
+        p.resetJointState(self.id, self.mimic_parent_id, open_angle)
+ 
+
+        for joint_id, multiplier in self.mimic_child_multiplier.items():
+            p.resetJointState(self.id, joint_id, open_angle * multiplier)
+ 
+        for _ in range(10):
+            p.stepSimulation()
+
 
     def get_current_ee_position(self):
         eef_state = p.getLinkState(self.id, self.eef_id)
         return eef_state
 
     def get_robot_state(self):
-            """Get complete robot state: end-effector pose + joint angles + actual gripper angle"""
+            """Get complete robot state with normalized gripper [0, 1]"""
             eef_state = p.getLinkState(self.id, self.eef_id)
             eef_pos = np.array(eef_state[0])
             eef_orn_quat = np.array(eef_state[1])
             eef_orn_euler = np.array(p.getEulerFromQuaternion(eef_orn_quat))
 
-            joint_states = []
-            for joint_id in self.arm_controllable_joints:
-                joint_state = p.getJointState(self.id, joint_id)
-                joint_states.append(joint_state[0])
+            joint_states = [p.getJointState(self.id, i)[0] for i in self.arm_controllable_joints]
 
-            if self.gripper_angle_override is not None:
-                # print("Using gripper angle override:", self.gripper_angle_override)
-                gripper_val = self.gripper_angle_override
-            else:
+            # Get raw gripper angle
+            raw_gripper_angle = p.getJointState(self.id, self.mimic_parent_id)[0]
+
+            # 1. Apply noise threshold
+            if abs(raw_gripper_angle) < 1e-3:
+                raw_gripper_angle = 0.0
+
+            # 2. Cap at 0.35 and Normalize to [0, 1]
+            # Calculation: normalized = min(raw, 0.35) / 0.35
+            normalized_gripper = min(raw_gripper_angle, 0.35) / 0.35
+
+            # print(f"Gripper: Raw={raw_gripper_angle:.4f} | Normalized={normalized_gripper:.4f}")
             
-                raw_angle = p.getJointState(self.id, self.mimic_parent_id)[0]
-                
-                # 1. Noise Suppression (Floor to 0 if very small)
-                if abs(raw_angle) < 1e-3:
-                    raw_angle = 0.0
-                
-                # 2. Real-time Normalization (Scale 0-0.2 to 0-1.0)
-                gripper_val = np.clip(raw_angle / self.GRIPPER_NORM_LIMIT, 0.0, 1.0)
-
-                # print("Raw gripper angle:", raw_angle, "Normalized gripper value:", gripper_val)
-
-            state = np.concatenate([eef_pos, eef_orn_euler, joint_states, [gripper_val]])
+            state = np.concatenate([eef_pos, eef_orn_euler, joint_states, [normalized_gripper]])
             return state
+        
+
+
+def interpolate_gripper(robot, target_angle, steps=60, 
+                        capture_frames=True, iter_folder=None,
+                        frame_counter=None, base_pos=None,
+                        state_history=None, cube_id=None,
+                        cube_pos_history=None, table_id=None,
+                        plane_id=None, tray_id=None, EXCLUDE_TABLE=True):
+    """Smoothly interpolate gripper position over multiple steps"""
+
+    current_gripper_state = p.getJointState(robot.id, robot.mimic_parent_id)
+    current_angle = current_gripper_state[0]
+
+    # print(f"\nInterpolating gripper from {current_angle:.4f} to {target_angle:.4f}")
+
+    # Interpolate between current and target angle
+    for i in range(steps):
+        alpha = (i + 1) / steps  # Linear interpolation factor
+        interpolated_angle = current_angle + alpha * (target_angle - current_angle)
+        
+        # print(f"Step {i+1}/{steps}: Target {interpolated_angle:.4f}", end=" -> ")
+        
+        # Control parent joint
+        p.setJointMotorControl2(
+            robot.id, 
+            robot.mimic_parent_id, 
+            p.POSITION_CONTROL, 
+            targetPosition=interpolated_angle,
+            force=1500,
+            maxVelocity=1.5
+        )
+        
+
+        # CRITICAL: Also control all mimic children joints explicitly
+        for joint_id, multiplier in robot.mimic_child_multiplier.items():
+            child_target = interpolated_angle * multiplier
+            p.setJointMotorControl2(
+                robot.id,
+                joint_id,
+                p.POSITION_CONTROL,
+                targetPosition=child_target,
+                force=1500,
+                maxVelocity=1.0
+            )
+        
+        for _ in range(200):
+            p.stepSimulation()
+
+
+        update_simulation(
+            1,
+            capture_frames=capture_frames,
+            iter_folder=iter_folder,
+            frame_counter=frame_counter,
+            robot=robot,
+            base_pos=base_pos,
+            state_history=state_history,
+            cube_id=cube_id,
+            cube_pos_history=cube_pos_history,
+            table_id=table_id,
+            plane_id=plane_id,
+            tray_id=tray_id,
+            EXCLUDE_TABLE=EXCLUDE_TABLE
+        )
+    
+    final_angle = p.getJointState(robot.id, robot.mimic_parent_id)[0]
+    print(f"Final gripper position: {final_angle:.4f} (target was {target_angle:.4f})")
+    print(f"Error: {abs(final_angle - target_angle):.4f}")
+
 
 
 def create_data_folders(iter_folder):
@@ -315,7 +396,6 @@ def update_simulation(
     robot=None,
     base_pos=None,
     state_history=None,
-    action_history = None , 
     cube_id=None,
     cube_pos_history=None,
     table_id=None,
@@ -335,9 +415,12 @@ def update_simulation(
     # Create list of object IDs to exclude from point clouds
     exclude_ids = []
     if table_id is not None and EXCLUDE_TABLE:
+        # print("Excluding table from point clouds with {}".format(table_id))
         exclude_ids.append(table_id)
     if plane_id is not None:
+        # print("Excluding plane from point clouds with {}".format(plane_id))
         exclude_ids.append(plane_id)
+
 
     for _ in range(steps):
         p.stepSimulation()
@@ -384,6 +467,7 @@ def update_simulation(
             
             # Filtered point cloud for NPY
             filtered_pcd_tp = points_tp_flat[final_mask_tp]
+
 
             # Save third-person data
             cv2.imwrite(
@@ -454,6 +538,7 @@ def update_simulation(
             # Filtered point cloud for NPY
             filtered_pcd_wr = points_wr_flat[final_mask_wr]
 
+
             # Save wrist data
             cv2.imwrite(
                 os.path.join(dirs["wr_rgb"], f"wr_rgb_{frame_counter[0]:04d}.png"),
@@ -518,10 +603,6 @@ def update_simulation(
             if state_history is not None:
                 state_history.append(current_state)
 
-            # Record the discrete command (1, 0, -1)
-            if action_history is not None:
-                action_history.append(robot.current_gripper_velocity)
-
             # ============ SAVE CUBE POSITION ============
             if cube_id is not None and cube_pos_history is not None:
                 cube_pos, cube_orn = p.getBasePositionAndOrientation(cube_id)
@@ -560,8 +641,12 @@ def save_point_cloud_ply(points, colors, filename, exclude_mask=None):
             f.write(f"{int(color[0])} {int(color[1])} {int(color[2])}\n")
 
 
+
 def setup_simulation():
-    p.connect(p.GUI)
+
+    p.connect(p.DIRECT)
+    print("PyBullet running in DIRECT (headless) mode")
+
     p.setGravity(0, 0, -9.8)
     p.setAdditionalSearchPath(pybullet_data.getDataPath())
     
@@ -580,8 +665,8 @@ def random_color_cube(cube_id):
     color = [random.random(), random.random(), random.random(), 1.0]
     p.changeVisualShape(cube_id, -1, rgbaColor=color)
 
+
 def move_and_grab_cube(robot, tray_pos, table_id, plane_id, tray_id, EXCLUDE_TABLE, base_save_dir="dataset"):
-    
     successful_iterations = 0
     total_attempts = 0
     failed_attempts = 0
@@ -599,36 +684,53 @@ def move_and_grab_cube(robot, tray_pos, table_id, plane_id, tray_id, EXCLUDE_TAB
         frame_counter = [0]
         state_history = []
         cube_pos_history = []
-        action_history = []
 
         print(f"\n{'='*60}")
         print(f"ATTEMPT {total_attempts + 1} (Successful: {successful_iterations}/36)")
         print(f"{'='*60}\n")
 
-
+        # Reset arm posture
         target_joint_positions = [0, -1.57, 1.57, -1.5, -1.57, 0.0]
-        
         for i, joint_id in enumerate(robot.arm_controllable_joints):
             p.setJointMotorControl2(
                 robot.id, joint_id, p.POSITION_CONTROL, target_joint_positions[i]
             )
-    
+
+        # --- UPDATE THIS SECTION IN move_and_grab_cube ---
+
+        # Force gripper to reset
+        print("Resetting gripper...")
+
+        # 1. Teleport the physical state to 0
+        p.resetJointState(robot.id, robot.mimic_parent_id, 0)
+        for joint_id, multiplier in robot.mimic_child_multiplier.items():
+            p.resetJointState(robot.id, joint_id, 0)
+
+        # 2. CRITICAL: Reset the motor control target to 0
+        # Without this, the motor will fight the reset and move back to 0.2
         p.setJointMotorControl2(
             robot.id, 
             robot.mimic_parent_id, 
             p.POSITION_CONTROL, 
-            targetPosition=0.000,
-            force=1500,
-            maxVelocity=1.5
+            targetPosition=0, # Command it to stay at 0
+            force=1500
         )
 
-
-        for _ in range(5000):
+        # Also reset child motor targets
+        for joint_id, multiplier in robot.mimic_child_multiplier.items():
+            p.setJointMotorControl2(
+                robot.id,
+                joint_id,
+                p.POSITION_CONTROL,
+                targetPosition=0,
+                force=1500
+            )
+        
+        for _ in range(500):
             p.stepSimulation()
 
         actual_angle = p.getJointState(robot.id, robot.mimic_parent_id)[0]
-
-
+        
         update_simulation(
             200,
             capture_frames=False,
@@ -643,61 +745,98 @@ def move_and_grab_cube(robot, tray_pos, table_id, plane_id, tray_id, EXCLUDE_TAB
             EXCLUDE_TABLE=EXCLUDE_TABLE,
         )
 
-        # print(f"Gripper reset to: {actual_angle:.4f}\n")
-        robot.move_gripper(0.0)
-    
-        for _ in range(5000):
-            p.stepSimulation()
+        print(f"Gripper reset to: {actual_angle:.4f}\n")
 
-        actual_angle = p.getJointState(robot.id, robot.mimic_parent_id)[0]
 
-        # print(f"Gripper again reset to: {actual_angle:.4f}\n")
-
-        
-        
-        # Random cube
+        # Spawn random cube
         cube_start_pos = [random.uniform(0.3, 0.7), random.uniform(-0.1, 0.1), 0.65]
         cube_start_orn = p.getQuaternionFromEuler([0, 0, 0])
         cube_id = p.loadURDF("cube_small.urdf", cube_start_pos, cube_start_orn)
         random_color_cube(cube_id)
+        
+        print(f"Cube spawned at: [{cube_start_pos[0]:.4f}, {cube_start_pos[1]:.4f}, {cube_start_pos[2]:.4f}]")
 
         eef_state = robot.get_current_ee_position()
-        eef_orn = eef_state[1]
+        eef_orientation = eef_state[1]
 
-        actual_gripper = p.getJointState(robot.id, robot.mimic_parent_id)[0]
-        print(f"Reset complete - Gripper position: {actual_gripper:.4f}")
+        # Phase 1: Move above cube
+        print("Phase 1: Moving above cube...")
+        robot.move_arm_ik([cube_start_pos[0], cube_start_pos[1], 0.83], eef_orientation)
+        update_simulation(
+            50, capture_frames=True, iter_folder=temp_folder,
+            frame_counter=frame_counter, robot=robot, base_pos=robot.base_pos,
+            state_history=state_history, cube_id=cube_id,
+            cube_pos_history=cube_pos_history, table_id=table_id,
+            plane_id=plane_id, tray_id=tray_id,
+            EXCLUDE_TABLE=EXCLUDE_TABLE
+        )
 
-        robot.gripper_angle_override = None # Ensure we start with live tracking
+        # Phase 2: Move down to grasp
+        print("Phase 2: Moving down to grasp...")
+        robot.move_arm_ik([cube_start_pos[0], cube_start_pos[1], 0.78], eef_orientation)
+        update_simulation(
+            50, capture_frames=True, iter_folder=temp_folder,
+            frame_counter=frame_counter, robot=robot, base_pos=robot.base_pos,
+            state_history=state_history, cube_id=cube_id,
+            cube_pos_history=cube_pos_history, table_id=table_id,
+            plane_id=plane_id, tray_id=tray_id,
+            EXCLUDE_TABLE=EXCLUDE_TABLE
+        )
 
-        # 1. Move Above Cube
-        robot.move_arm_ik([cube_start_pos[0], cube_start_pos[1], 0.83], eef_orn)
-        update_simulation(50, capture_frames=True, iter_folder=temp_folder, frame_counter=frame_counter, robot=robot, base_pos=robot.base_pos, state_history=state_history, action_history =  action_history, cube_id=cube_id, cube_pos_history=cube_pos_history, table_id=table_id, plane_id=plane_id, tray_id=tray_id, EXCLUDE_TABLE=EXCLUDE_TABLE)
+        # Phase 3: Close gripper
+        print("Phase 3: Closing gripper...")
+        interpolate_gripper(
+            robot, target_angle=0.50, steps=50,
+            capture_frames=True, iter_folder=temp_folder,
+            frame_counter=frame_counter, base_pos=robot.base_pos,
+            state_history=state_history, cube_id=cube_id,
+            cube_pos_history=cube_pos_history, table_id=table_id,
+            plane_id=plane_id, tray_id=tray_id,
+            EXCLUDE_TABLE=EXCLUDE_TABLE
+        )
 
-        # 2. Move Down
-        robot.move_arm_ik([cube_start_pos[0], cube_start_pos[1], 0.78], eef_orn)
-        update_simulation(50, capture_frames=True, iter_folder=temp_folder, frame_counter=frame_counter, robot=robot, base_pos=robot.base_pos, state_history=state_history, action_history =  action_history, cube_id=cube_id, cube_pos_history=cube_pos_history, table_id=table_id, plane_id=plane_id, tray_id=tray_id, EXCLUDE_TABLE=EXCLUDE_TABLE)
-        # 3. Close Gripper
-        robot.move_gripper(1.0)
-        update_simulation(25, capture_frames=True, iter_folder=temp_folder, frame_counter=frame_counter, robot=robot, base_pos=robot.base_pos, state_history=state_history, action_history =  action_history, cube_id=cube_id, cube_pos_history=cube_pos_history, table_id=table_id, plane_id=plane_id, tray_id=tray_id, EXCLUDE_TABLE=EXCLUDE_TABLE)
+        # Phase 4: Lift cube
+        print("Phase 4: Lifting cube...")
+        robot.move_arm_ik([cube_start_pos[0], cube_start_pos[1], 1.18], eef_orientation)
+        update_simulation(
+            50, capture_frames=True, iter_folder=temp_folder,
+            frame_counter=frame_counter, robot=robot, base_pos=robot.base_pos,
+            state_history=state_history, cube_id=cube_id,
+            cube_pos_history=cube_pos_history, table_id=table_id,
+            plane_id=plane_id, tray_id=tray_id,
+            EXCLUDE_TABLE=EXCLUDE_TABLE 
+        )
 
-        # LOCK GRIPPER ANGLE FOR TRANSPORT
-        # LOCK PHASE: Set override to 1.0 (Fully closed normalized value)
-        robot.gripper_angle_override = 1.0
-        print("Gripper locked at normalized 1.0 for transport.")
-        # 4. Lift Cube
-        robot.move_arm_ik([cube_start_pos[0], cube_start_pos[1], 1.18], eef_orn)
-        update_simulation(50, capture_frames=True, iter_folder=temp_folder, frame_counter=frame_counter, robot=robot, base_pos=robot.base_pos, state_history=state_history, action_history =  action_history, cube_id=cube_id, cube_pos_history=cube_pos_history, table_id=table_id, plane_id=plane_id, tray_id=tray_id, EXCLUDE_TABLE=EXCLUDE_TABLE)
-
-        # 5. Move to Tray
-        robot.move_arm_ik([tray_pos[0], tray_pos[1], tray_pos[2] + 0.56], eef_orn)
-        update_simulation(150, capture_frames=True, iter_folder=temp_folder, frame_counter=frame_counter, robot=robot, base_pos=robot.base_pos, state_history=state_history, action_history =  action_history, cube_id=cube_id, cube_pos_history=cube_pos_history, table_id=table_id, plane_id=plane_id, tray_id=tray_id, EXCLUDE_TABLE=EXCLUDE_TABLE)
+        # Phase 5: Move above tray
+        print("Phase 5: Moving to tray...")
+        tray_offset = random.uniform(0.1, 0.3)
+        target_tray_pos = [tray_pos[0] + tray_offset, tray_pos[1] + tray_offset, tray_pos[2] + 0.56]
+        print(f"  Target position: [{target_tray_pos[0]:.4f}, {target_tray_pos[1]:.4f}, {target_tray_pos[2]:.4f}]")
         
-        # 6. Open Gripper (Release Lock)
-        robot.gripper_angle_override = None 
-        robot.move_gripper(-0.25)
-        update_simulation(40, capture_frames=True, iter_folder=temp_folder, frame_counter=frame_counter, robot=robot, base_pos=robot.base_pos, state_history=state_history, action_history =  action_history, cube_id=cube_id, cube_pos_history=cube_pos_history, table_id=table_id, plane_id=plane_id, tray_id=tray_id, EXCLUDE_TABLE=EXCLUDE_TABLE)
+        robot.move_arm_ik(target_tray_pos, eef_orientation)
+        update_simulation(
+            150, capture_frames=True, iter_folder=temp_folder,
+            frame_counter=frame_counter, robot=robot, base_pos=robot.base_pos,
+            state_history=state_history, cube_id=cube_id,
+            cube_pos_history=cube_pos_history, table_id=table_id,
+            plane_id=plane_id, tray_id=tray_id,
+            EXCLUDE_TABLE=EXCLUDE_TABLE
+        )
 
-        # (Final success check and cleanup...)
+        # Phase 6: Open gripper to release
+        print("Phase 6: Opening gripper to release...")
+        interpolate_gripper(
+            robot, target_angle=0.2, steps=20,
+            capture_frames=True, iter_folder=temp_folder,
+            frame_counter=frame_counter, base_pos=robot.base_pos,
+            state_history=state_history, cube_id=cube_id,
+            cube_pos_history=cube_pos_history, table_id=table_id,
+            plane_id=plane_id, tray_id=tray_id,
+            EXCLUDE_TABLE=EXCLUDE_TABLE
+        )
+
+        # Phase 7: Wait for cube to settle
+        print("Phase 7: Waiting for cube to settle...")
         for _ in range(1500):
             p.stepSimulation()
 
@@ -713,7 +852,7 @@ def move_and_grab_cube(robot, tray_pos, table_id, plane_id, tray_id, EXCLUDE_TAB
         )
 
         cube_final_pos = p.getBasePositionAndOrientation(cube_id)[0]
-
+        
         if inside_tray:
             print(f"\n{'='*60}")
             print(f"🎉 SUCCESS! Cube in tray at {cube_final_pos}")
@@ -727,33 +866,11 @@ def move_and_grab_cube(robot, tray_pos, table_id, plane_id, tray_id, EXCLUDE_TAB
                 import shutil
                 shutil.rmtree(final_folder)
             os.rename(temp_folder, final_folder)
-
-
-            # ============ SAVE AGENT STATES AND ACTIONS ============
+            
+            # Save state-action data
             agent_pos = np.array(state_history)
-            
-            # CRITICAL: For gripper, actions = states (not deltas)
-            # For arm joints (indices 6-11), calculate deltas
-            arm_joint_deltas = np.diff(agent_pos[:, 6:12], axis=0)
-            arm_joint_deltas = np.vstack([arm_joint_deltas, np.zeros(6)])
-            
-
-            
-            # For EEF pose (indices 0-5), calculate deltas
-            eef_deltas = np.vstack([np.diff(agent_pos[:, 0:6], axis=0), np.zeros(6)])
-            arm_deltas = np.vstack([np.diff(agent_pos[:, 6:12], axis=0), np.zeros(6)])
-            
-            # MAP RAW COMMANDS TO DISCRETE SAVED ACTIONS
-            raw_cmds = np.array(action_history)
-            saved_gripper_cmds = np.zeros_like(raw_cmds)
-            
-            # Logic: 1.0 -> 1, 0.0 -> 0, -0.25 -> -1
-            saved_gripper_cmds[raw_cmds == 1.0] = 1.0
-            saved_gripper_cmds[raw_cmds == 0.0] = 0.0
-            saved_gripper_cmds[raw_cmds == -0.25] = -1.0
-            
-            actions = np.hstack([eef_deltas, arm_deltas, saved_gripper_cmds.reshape(-1, 1)])
-
+            actions = np.diff(agent_pos, axis=0)
+            actions = np.vstack([actions, np.zeros(13)])
             cube_positions = np.array(cube_pos_history)
 
             state_action_data = {
@@ -762,19 +879,17 @@ def move_and_grab_cube(robot, tray_pos, table_id, plane_id, tray_id, EXCLUDE_TAB
                 "cube_pos": cube_positions.tolist(),
                 "num_frames": len(agent_pos),
                 "state_dim": 13,
-                "action_dim": 13,
                 "cube_dim": 7,
+                "success": True,
+                "attempt_number": total_attempts,
+                "success_number": successful_iterations,
+                "cube_start_pos": cube_start_pos,
+                "cube_final_pos": list(cube_final_pos),
                 "state_description": {
                     "eef_pos": [0, 1, 2],
                     "eef_orn": [3, 4, 5],
                     "arm_joints": [6, 7, 8, 9, 10, 11],
-                    "gripper_velocity": [12],
-                },
-                "action_description": {
-                    "eef_pos_delta": [0, 1, 2],
-                    "eef_orn_delta": [3, 4, 5],
-                    "arm_joint_deltas": [6, 7, 8, 9, 10, 11],
-                    "gripper_velocity_command": [12],  # ABSOLUTE velocity, not delta
+                    "gripper": [12],
                 },
                 "cube_description": {
                     "position": [0, 1, 2],
@@ -786,25 +901,23 @@ def move_and_grab_cube(robot, tray_pos, table_id, plane_id, tray_id, EXCLUDE_TAB
             with open(state_action_file, "w") as f:
                 json.dump(state_action_data, f, indent=2)
 
-            # Save as numpy arrays
             np.save(os.path.join(final_folder, "agent_pos.npy"), agent_pos)
             np.save(os.path.join(final_folder, "actions.npy"), actions)
             np.save(os.path.join(final_folder, "cube_pos.npy"), cube_positions)
 
-            # Save as text files
             np.savetxt(
                 os.path.join(final_folder, "agent_pos.txt"),
                 agent_pos,
                 fmt="%.6f",
                 delimiter=" ",
-                header="End-effector pose (x,y,z,roll,pitch,yaw) + 6 joint angles + gripper velocity (13 dimensions)",
+                header="End-effector pose (x,y,z,roll,pitch,yaw) + 6 joint angles + gripper angle (13 dimensions)",
             )
             np.savetxt(
                 os.path.join(final_folder, "actions.txt"),
                 actions,
                 fmt="%.6f",
                 delimiter=" ",
-                header="Action: [eef_delta(6), arm_joint_delta(6), gripper_velocity_command(1)] - NOTE: gripper is ABSOLUTE velocity, not delta!",
+                header="Action deltas: differences between consecutive states (13 dimensions)",
             )
             np.savetxt(
                 os.path.join(final_folder, "cube_pos.txt"),
@@ -861,14 +974,22 @@ def move_and_grab_cube(robot, tray_pos, table_id, plane_id, tray_id, EXCLUDE_TAB
     print("="*60 + "\n")
 
 
+
 def main():
+    
     EXCLUDE_TABLE = True
+
+    """
+    If excluding table from point clouds, set EXCLUDE_TABLE = True
+    0r else False to include table in point clouds
+    """
+
     tray_pos, tray_orn, table_id, plane_id, tray_id = setup_simulation()
     robot = UR5Robotiq85([0, 0, 0.62], [0, 0, 0])
     robot.load()
-
     move_and_grab_cube(robot, tray_pos, table_id, plane_id, tray_id , EXCLUDE_TABLE = EXCLUDE_TABLE)
 
 
 if __name__ == "__main__":
     main()
+

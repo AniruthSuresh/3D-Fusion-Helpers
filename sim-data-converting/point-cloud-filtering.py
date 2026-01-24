@@ -7,7 +7,7 @@ import pytorch3d.ops as torch3d_ops
 # ---------------------------
 # FARTHEST POINT SAMPLING
 # ---------------------------
-def farthest_point_sampling(points, num_points=2500, use_cuda=False):
+def farthest_point_sampling(points, num_points=2500, use_cuda=True):
     K = [num_points]
 
     pc = torch.from_numpy(points).float()
@@ -64,7 +64,7 @@ def process_point_cloud(pc_xyz, pc_rgb, visualize=True):
         print("Showing RAW point cloud (close window to continue)")
         o3d.visualization.draw_geometries([pcd_before])
 
-    WORK_SPACE = compute_workspace_mean_std(pc_xyz, n_std=2)
+    WORK_SPACE = compute_workspace_mean_std(pc_xyz, n_std=10)
     
     mask = (
         (pc_xyz[:, 0] > WORK_SPACE[0][0]) & (pc_xyz[:, 0] < WORK_SPACE[0][1]) &
@@ -82,7 +82,7 @@ def process_point_cloud(pc_xyz, pc_rgb, visualize=True):
         return pc_xyz, pc_rgb
 
     num_fps = min(6000, pc_xyz.shape[0])
-    pc_xyz_fps, idx = farthest_point_sampling(pc_xyz, num_points=6000)
+    pc_xyz_fps, idx = farthest_point_sampling(pc_xyz, num_points=6000 , use_cuda=True)
     pc_rgb_fps = pc_rgb[idx]
 
     print(f" → After FPS: {pc_xyz_fps.shape[0]} points")
