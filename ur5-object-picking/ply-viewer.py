@@ -30,7 +30,7 @@ def farthest_point_sampling(points, num_points=1024, use_cuda=False):
 # ---------------------------
 # WORKSPACE COMPUTATION
 # ---------------------------
-def compute_workspace_bounds(pc_xyz, n_std=2.5):
+def compute_workspace_bounds(pc_xyz, n_std=20):
     mean = pc_xyz.mean(axis=0)
     std = pc_xyz.std(axis=0)
 
@@ -109,7 +109,7 @@ def visualize_depth(pc_xyz, title, dark_bg=True):
 # ---------------------------
 # MAIN
 # ---------------------------
-ply_path = "/home/aniruth/Desktop/RRC/3D-Fusion-Helpers/ur5-object-picking/dataset/iter_0000/third_person/pcd/tp_pcd_0000.ply"
+ply_path = "./cloud_00033_filtered.ply"
 
 pcd = o3d.io.read_point_cloud(ply_path)
 pc_xyz = np.asarray(pcd.points)
