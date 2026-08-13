@@ -292,6 +292,13 @@
       <geometry>
         <mesh filename="../meshes/robotiq_85/collision/robotiq_arg2f_85_outer_finger.dae" scale="0.001 0.001 0.001"/>
       </geometry>
+      <contact>
+        <lateral_friction value="50.0"/>
+        <rolling_friction value="0.01"/>
+        <spinning_friction value="0.01"/>
+        <stiffness value="20000.0"/>
+        <damping value="500.0"/>
+      </contact>
     </collision>
   </link>
   <joint name="left_inner_finger_joint" type="revolute">
@@ -322,6 +329,13 @@
       <geometry>
         <mesh filename="../meshes/robotiq_85/collision/robotiq_arg2f_85_inner_finger.dae" scale="0.001 0.001 0.001"/>
       </geometry>
+      <contact>
+        <lateral_friction value="50.0"/>
+        <rolling_friction value="0.01"/>
+        <spinning_friction value="0.01"/>
+        <stiffness value="20000.0"/>
+        <damping value="500.0"/>
+      </contact>
     </collision>
   </link>
   <joint name="left_inner_finger_pad_joint" type="fixed">
@@ -332,8 +346,8 @@
   </joint>
   <link name="left_inner_finger_pad">
     <inertial>
-      <mass value="1."/>
-      <inertia ixx="1E-10" ixy="1E-10" ixz="1E-10" iyy="1E-10" iyz="1E-10" izz="1E-10"/>
+      <mass value="5.0"/>
+      <inertia ixx="1E-05" ixy="1E-10" ixz="1E-10" iyy="1E-05" iyz="1E-10" izz="1E-05"/>
     </inertial>
     <visual>
       <origin rpy="0 0 0" xyz="0 0 0"/>
@@ -352,6 +366,13 @@
       <material name="">
         <color rgba="0.9 0.0 0.0 1"/>
       </material>
+      <contact>
+        <lateral_friction value="100.0"/>
+        <rolling_friction value="0.01"/>
+        <spinning_friction value="0.01"/>
+        <stiffness value="30000.0"/>
+        <damping value="1000.0"/>
+      </contact>
     </collision>
   </link>
   <joint name="left_inner_knuckle_joint" type="revolute">
@@ -441,6 +462,13 @@
       <geometry>
         <mesh filename="../meshes/robotiq_85/collision/robotiq_arg2f_85_outer_finger.dae" scale="0.001 0.001 0.001"/>
       </geometry>
+      <contact>
+        <lateral_friction value="50.0"/>
+        <rolling_friction value="0.01"/>
+        <spinning_friction value="0.01"/>
+        <stiffness value="20000.0"/>
+        <damping value="500.0"/>
+      </contact>
     </collision>
   </link>
   <joint name="right_inner_finger_joint" type="revolute">
@@ -471,6 +499,13 @@
       <geometry>
         <mesh filename="../meshes/robotiq_85/collision/robotiq_arg2f_85_inner_finger.dae" scale="0.001 0.001 0.001"/>
       </geometry>
+      <contact>
+        <lateral_friction value="50.0"/>
+        <rolling_friction value="0.01"/>
+        <spinning_friction value="0.01"/>
+        <stiffness value="20000.0"/>
+        <damping value="500.0"/>
+      </contact>
     </collision>
   </link>
   <joint name="right_inner_finger_pad_joint" type="fixed">
@@ -481,8 +516,8 @@
   </joint>
   <link name="right_inner_finger_pad">
     <inertial>
-      <mass value="1"/>
-      <inertia ixx="1E-10" ixy="1E-10" ixz="1E-10" iyy="1E-10" iyz="1E-10" izz="1E-10"/>
+      <mass value="5.0"/>
+      <inertia ixx="1E-05" ixy="1E-10" ixz="1E-10" iyy="1E-05" iyz="1E-10" izz="1E-05"/>
     </inertial>
     <visual>
       <origin rpy="0 0 0" xyz="0 0 0"/>
@@ -501,6 +536,13 @@
       <material name="LightGrey">
         <color rgba="0.7 0.7 0.7 1.0"/>
       </material>
+      <contact>
+        <lateral_friction value="100.0"/>
+        <rolling_friction value="0.01"/>
+        <spinning_friction value="0.01"/>
+        <stiffness value="30000.0"/>
+        <damping value="1000.0"/>
+      </contact>
     </collision>
   </link>
   <joint name="right_inner_knuckle_joint" type="revolute">

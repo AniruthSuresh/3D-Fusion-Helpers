@@ -2,6 +2,7 @@ import pybullet as p
 import pybullet_data
 from collections import namedtuple
 import time
+import numpy as np
 
 class UR5Robotiq85:
     def __init__(self, base_pos=[0,0,0], base_ori=[0,0,0]):
@@ -19,7 +20,28 @@ class UR5Robotiq85:
         )
         self.__parse_joint_info__()
         self.__setup_mimic_joints__()
-
+        # Visualize end-effector link
+        ee_link_state = p.getLinkState(self.id, self.eef_id)
+        ee_pos = ee_link_state[0]
+        # Draw a circle at the end-effector
+        num_points = 20
+        radius = 0.005
+        for i in range(num_points):
+            angle1 = 2 * 3.14159 * i / num_points
+            angle2 = 2 * 3.14159 * (i + 1) / num_points
+            point1 = [ee_pos[0] + radius * np.cos(angle1), 
+                 ee_pos[1] + radius * np.sin(angle1), 
+                 ee_pos[2]]
+            point2 = [ee_pos[0] + radius * np.cos(angle2), 
+                 ee_pos[1] + radius * np.sin(angle2), 
+                 ee_pos[2]]
+            p.addUserDebugLine(
+            point1,
+            point2,
+            lineColorRGB=[1, 0, 0],
+            lineWidth=2,
+            lifeTime=0
+            )
     def __parse_joint_info__(self):
         JointInfo = namedtuple(
             'JointInfo',
